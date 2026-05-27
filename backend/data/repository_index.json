@@ -1,0 +1,34 @@
+[
+  {
+    "repo_name": "oops_python",
+    "team": "backend",
+    "framework": "python",
+    "architecture": "layered",
+    "language": "python",
+    "type": "file",
+    "name": "hello.py",
+    "file": "hello.py",
+    "path": "C:\\Users\\daksh\\OneDrive\\Desktop\\OOPS_PYTHON\\hello.py",
+    "imports": [],
+    "dependencies": [],
+    "parent_class": null,
+    "docstring": null,
+    "content": ""
+  },
+  {
+    "repo_name": "oops_python",
+    "team": "backend",
+    "framework": "python",
+    "architecture": "layered",
+    "language": "python",
+    "type": "file",
+    "name": "main.py",
+    "file": "main.py",
+    "path": "C:\\Users\\daksh\\OneDrive\\Desktop\\OOPS_PYTHON\\main.py",
+    "imports": [],
+    "dependencies": [],
+    "parent_class": null,
+    "docstring": "oops makes code reusable and for security and helps in management projects",
+    "content": "\"\"\"oops makes code reusable and for security and helps in management projects\"\"\"\n\"\"\"CLASS\nclass name: it is blueprint or template to create an object\nthere are :\nattributes : variables defined inside a class\nmethod : functions defined in a class\"\"\"\n# class Factory:\n#     a=10\n#     def hello(self):\n#         print(\"How are you\")\n#     print(\"yookaso watashivano soul society\")\n# print(Factory().a)\n# Factory().hello()\n\"\"\"CREATING OBJECTS\"\"\"\n\"\"\"self used in no parameters\"\"\"\n# class Factory:\n#     a=10\n#     def hello(self):\n#         print(\"How are you\")\n#     print(\"yookaso watashivano soul society\")\n# object1 = Factory()\n# print(object1.a)\n# object1.hello()\n# object2=Factory()\n# object2.hello()\n\"\"\"\"constructors : class cant use to get the parameters so constructors are used to\ngain the constructors ,,, it runs automatically when we call a class it is a dunder method and targets object location\"\"\"\n\"\"\"use of initialization method with '__ __' used to get dunder methods\nself : is a location transfer\"\"\"\n# class Factory:\n#     def __init__(self,material,zips,pockets):\n#         self.material=material\n#         self.zips=zips\n#         self.pockets=pockets\n#     def show(self):\n#         print(f\"the details of the shoes are : {self.material} , {self.pockets} , {self.zips} \")\n# reebok=Factory(\"leather\",2,3)\n# campus=Factory(\"nylon\",3,3)\n# print(campus.pockets)\n# campus.show()\n# class Animal:\n#     # normal attribute created in a class\n#     a=100 \n#     # instance attributes are created using self ,, instance method works with and access and modify instance attribute\n#     def __init__(self,age):\n#         self.age=age\n#     def show(self):\n#         print(f\"the age is {self.age}\")\n#     # class method works with the class no use with objects ,,, use of decorator\n#     # cls : target class location\n#     @classmethod\n#     def hello(cls):\n#         print(\"hello\")\n#     # static method not related to class or object\n#     @staticmethod\n#     def static1():\n#         print(\"how are you\")\n# animal1=Animal(16)\n# print(animal1.age)\n# animal1.show()\n# animal1.hello()\n# animal1.static1()\n\"\"\"inheritance : property from heir ,,, here it works between class ,, child class inherit from parent class \nproperties and behaviour : helps in reuse of codes, organized , structured, easy to maintain and extend\"\"\"\n# class Factory:  #parent class / super class\n#     a=\"attribute inside a factory\"\n#     def hello():\n#         print(\"hello i am a method mentioned inside factory\")\n# class Factory_pune(Factory):  #child class / sub class\n#     pass\n# obj = Factory()\n# obj2 = Factory_pune()\n# print(obj.a)\n# print(obj2.a)\n\"\"\"If there is constructors in the parent class then the child class also inherits it\nthis is single level inheritance \"\"\"\n# class Animal:\n#     def __init__(self,name):\n#         self.name=name\n#     def show(self):\n#         print(f\"hello your name is : {self.name}\")\n# class Human(Animal):\n#     def __init__(self, name , age):\n#         super().__init__(name)\n#"
+  }
+]

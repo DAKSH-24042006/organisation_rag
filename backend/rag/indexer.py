@@ -1,5 +1,4 @@
 import os
-import ast
 import re
 import json
 
@@ -11,14 +10,74 @@ from qdrant_client.models import (
     PointStruct
 )
 
+from rag.parser import (
+
+    extract_functions,
+    extract_classes,
+    extract_imports,
+    extract_dependencies
+)
+
 from rag.embeddings import embedding_model
 
 from rag.config import (
+
     QDRANT_HOST,
     QDRANT_PORT,
     COLLECTION_NAME,
     REPOSITORIES
 )
+
+# =========================================================
+# SUPPORTED LANGUAGES
+# =========================================================
+
+SUPPORTED_EXTENSIONS = {
+
+    ".py": "python",
+
+    ".js": "javascript",
+
+    ".ts": "typescript",
+
+    ".java": "java"
+}
+
+# =========================================================
+# IGNORED DIRECTORIES
+# =========================================================
+
+IGNORED_DIRECTORIES = [
+
+    "node_modules",
+    ".git",
+    "__pycache__",
+    "venv",
+    ".venv",
+    "dist",
+    "build",
+    ".next",
+    "coverage",
+    ".idea",
+    ".vscode",
+    "target",
+    "bin",
+    "obj",
+    "out",
+    "vendor",
+    "tmp",
+    "logs"
+]
+
+# =========================================================
+# IGNORED FILES
+# =========================================================
+
+IGNORED_FILES = [
+
+    ".min.js",
+    ".bundle.js"
+]
 
 # =========================================================
 # STORAGE
@@ -31,7 +90,9 @@ code_chunks = []
 # =========================================================
 
 client = QdrantClient(
+
     host=QDRANT_HOST,
+
     port=QDRANT_PORT
 )
 
@@ -44,12 +105,14 @@ client.recreate_collection(
     collection_name=COLLECTION_NAME,
 
     vectors_config=VectorParams(
+
         size=384,
+
         distance=Distance.COSINE
     )
 )
 
-print("Qdrant collection ready.\n")
+print("\nQdrant collection ready.\n")
 
 # =========================================================
 # CLEAN TEXT
@@ -57,57 +120,23 @@ print("Qdrant collection ready.\n")
 
 def clean_text(text):
 
-    text = re.sub(r"\n{2,}", "\n", text)
+    text = re.sub(
+
+        r"\n{2,}",
+
+        "\n",
+
+        text
+    )
 
     return text.strip()
-
-# =========================================================
-# EXTRACT IMPORTS
-# =========================================================
-
-def extract_python_imports(tree):
-
-    imports = []
-
-    for node in ast.walk(tree):
-
-        if isinstance(node, ast.Import):
-
-            for alias in node.names:
-                imports.append(alias.name)
-
-        elif isinstance(node, ast.ImportFrom):
-
-            if node.module:
-                imports.append(node.module)
-
-    return list(set(imports))
-
-# =========================================================
-# EXTRACT DEPENDENCIES
-# =========================================================
-
-def extract_dependencies(node):
-
-    dependencies = []
-
-    for child in ast.walk(node):
-
-        if isinstance(child, ast.Call):
-
-            if isinstance(child.func, ast.Name):
-                dependencies.append(child.func.id)
-
-            elif isinstance(child.func, ast.Attribute):
-                dependencies.append(child.func.attr)
-
-    return list(set(dependencies))
 
 # =========================================================
 # CREATE CHUNK
 # =========================================================
 
 def create_chunk(
+
     repo_metadata,
     language,
     chunk_type,
@@ -118,6 +147,7 @@ def create_chunk(
     dependencies=None,
     parent_class=None,
     docstring=""
+
 ):
 
     if imports is None:
@@ -174,148 +204,180 @@ def create_chunk(
     code_chunks.append(chunk)
 
 # =========================================================
-# PROCESS PYTHON FILE
+# PROCESS CODE FILE
 # =========================================================
 
-def process_python_file(
+def process_code_file(
+
     file_path,
     repo_metadata
+
 ):
-
-    with open(
-        file_path,
-        "r",
-        encoding="utf-8"
-    ) as f:
-
-        source_code = f.read()
-
-    source_code = clean_text(source_code)
 
     try:
 
-        tree = ast.parse(source_code)
+        extension = os.path.splitext(
+            file_path
+        )[1]
 
-    except Exception as e:
+        # =================================================
+        # SKIP UNSUPPORTED FILES
+        # =================================================
 
-        print(f"AST Error in {file_path}: {e}")
+        if extension not in SUPPORTED_EXTENSIONS:
+            return
 
-        return
+        # =================================================
+        # SKIP IGNORED FILES
+        # =================================================
 
-    imports = extract_python_imports(tree)
+        if any(
 
-    # =====================================================
-    # FILE CHUNK
-    # =====================================================
+            ignored in file_path
 
-    create_chunk(
+            for ignored in IGNORED_FILES
+        ):
 
-        repo_metadata=repo_metadata,
+            return
 
-        language="python",
+        language = SUPPORTED_EXTENSIONS[
+            extension
+        ]
 
-        chunk_type="file",
+        with open(
 
-        name=os.path.basename(file_path),
+            file_path,
 
-        file_path=file_path,
+            "r",
 
-        content=source_code[:3000],
+            encoding="utf-8",
 
-        imports=imports,
+            errors="ignore"
 
-        docstring=ast.get_docstring(tree)
-    )
+        ) as f:
 
-    # =====================================================
-    # AST WALK
-    # =====================================================
+            source_code = f.read()
 
-    for node in ast.walk(tree):
+        source_code = clean_text(
+            source_code
+        )
 
-        # -------------------------------------------------
-        # CLASS CHUNKS
-        # -------------------------------------------------
+        # =================================================
+        # IMPORTS
+        # =================================================
 
-        if isinstance(node, ast.ClassDef):
+        imports = extract_imports(
 
-            class_code = ast.get_source_segment(
-                source_code,
-                node
-            )
+            source_code,
+            extension
+        )
 
-            dependencies = extract_dependencies(node)
+        # =================================================
+        # DEPENDENCIES
+        # =================================================
+
+        dependencies = extract_dependencies(
+
+            source_code,
+            extension
+        )
+
+        # =================================================
+        # FUNCTIONS
+        # =================================================
+
+        functions = extract_functions(
+
+            source_code,
+            extension
+        )
+
+        for func in functions:
 
             create_chunk(
 
                 repo_metadata=repo_metadata,
 
-                language="python",
+                language=language,
 
-                chunk_type="class",
+                chunk_type="function",
 
-                name=node.name,
+                name=func["name"],
 
                 file_path=file_path,
 
-                content=class_code,
+                content=func["content"],
 
                 imports=imports,
 
-                dependencies=dependencies,
-
-                docstring=ast.get_docstring(node)
+                dependencies=dependencies
             )
 
-            # ---------------------------------------------
-            # METHOD CHUNKS
-            # ---------------------------------------------
+        # =================================================
+        # CLASSES
+        # =================================================
 
-            for child in node.body:
+        classes = extract_classes(
 
-                if isinstance(
-                    child,
-                    ast.FunctionDef
-                ):
+            source_code,
+            extension
+        )
 
-                    method_code = (
-                        ast.get_source_segment(
-                            source_code,
-                            child
-                        )
-                    )
+        for cls in classes:
 
-                    method_dependencies = (
-                        extract_dependencies(
-                            child
-                        )
-                    )
+            create_chunk(
 
-                    create_chunk(
+                repo_metadata=repo_metadata,
 
-                        repo_metadata=
-                        repo_metadata,
+                language=language,
 
-                        language="python",
+                chunk_type="class",
 
-                        chunk_type="method",
+                name=cls["name"],
 
-                        name=child.name,
+                file_path=file_path,
 
-                        file_path=file_path,
+                content=cls["content"],
 
-                        content=method_code,
+                imports=imports,
 
-                        imports=imports,
+                dependencies=dependencies
+            )
 
-                        dependencies=
-                        method_dependencies,
+        # =================================================
+        # FILE-LEVEL CHUNK
+        # =================================================
 
-                        parent_class=node.name,
+        create_chunk(
 
-                        docstring=
-                        ast.get_docstring(child)
-                    )
+            repo_metadata=repo_metadata,
+
+            language=language,
+
+            chunk_type="file",
+
+            name=os.path.basename(
+                file_path
+            ),
+
+            file_path=file_path,
+
+            content=source_code,
+
+            imports=imports,
+
+            dependencies=dependencies
+        )
+
+        print(
+            f"[INFO] Processed: {file_path}"
+        )
+
+    except Exception as e:
+
+        print(
+            f"[ERROR] {file_path}: {e}"
+        )
 
 # =========================================================
 # INDEX REPOSITORIES
@@ -337,34 +399,60 @@ def index_repositories():
             repo_path
         ):
 
+            # =============================================
+            # FILTER DIRECTORIES
+            # =============================================
+
+            dirs[:] = [
+
+                d for d in dirs
+
+                if d not in IGNORED_DIRECTORIES
+            ]
+
             for file in files:
 
-                if file.endswith(".py"):
+                if (
+
+                    file.endswith((
+
+                        ".py",
+                        ".js",
+                        ".ts",
+                        ".java"
+
+                    ))
+
+                    and
+
+                    not any(
+
+                        ignored in file
+
+                        for ignored in IGNORED_FILES
+                    )
+                ):
 
                     file_path = os.path.join(
                         root,
                         file
                     )
 
-                    try:
+                    process_code_file(
 
-                        process_python_file(
-                            file_path,
-                            repo
-                        )
+                        file_path,
+                        repo
+                    )
 
-                    except Exception as e:
+    print("\n" + "=" * 60)
 
-                        print(
-                            f"Error: {e}"
-                        )
-
-    print("=" * 60)
     print("REPOSITORIES INDEXED")
+
     print("=" * 60)
 
     print(
-        f"\nTotal Chunks: {len(code_chunks)}"
+        f"\nTotal Chunks: "
+        f"{len(code_chunks)}"
     )
 
 # =========================================================
@@ -382,37 +470,37 @@ def build_documents():
         document = f'''
 
 Repository:
-{chunk["repo_name"]}
+{chunk['repo_name']}
 
 Team:
-{chunk["team"]}
+{chunk['team']}
 
 Framework:
-{chunk["framework"]}
+{chunk['framework']}
 
 Architecture:
-{chunk["architecture"]}
+{chunk['architecture']}
 
 Language:
-{chunk["language"]}
+{chunk['language']}
 
 Type:
-{chunk["type"]}
+{chunk['type']}
 
 Name:
-{chunk["name"]}
+{chunk['name']}
 
 Imports:
-{" ".join(chunk["imports"])}
+{" ".join(chunk['imports'])}
 
 Dependencies:
-{" ".join(chunk["dependencies"])}
+{" ".join(chunk['dependencies'])}
 
 Docstring:
-{chunk["docstring"]}
+{chunk['docstring']}
 
 Code:
-{chunk["content"]}
+{chunk['content']}
 '''
 
         documents.append(document)
@@ -432,7 +520,9 @@ def generate_embeddings(documents):
     print("\nGenerating embeddings...\n")
 
     embeddings = embedding_model.encode(
+
         documents,
+
         show_progress_bar=True
     )
 
@@ -446,11 +536,20 @@ def store_vectors(embeddings):
 
     print("\nUploading vectors...\n")
 
+    if len(code_chunks) == 0:
+
+        raise ValueError(
+            "No chunks found. "
+            "Check repository paths."
+        )
+
     points = []
 
     for idx, (
+
         chunk,
         embedding
+
     ) in enumerate(
 
         zip(code_chunks, embeddings)
@@ -475,7 +574,7 @@ def store_vectors(embeddings):
         points=points
     )
 
-    print("Vectors uploaded.")
+    print("\nVectors uploaded.")
 
 # =========================================================
 # SAVE METADATA
@@ -483,14 +582,29 @@ def store_vectors(embeddings):
 
 def save_metadata():
 
+    os.makedirs(
+
+        "data",
+
+        exist_ok=True
+    )
+
     with open(
+
         "data/repository_index.json",
-        "w"
+
+        "w",
+
+        encoding="utf-8"
+
     ) as f:
 
         json.dump(
+
             code_chunks,
+
             f,
+
             indent=2
         )
 

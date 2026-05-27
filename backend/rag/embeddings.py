@@ -4,7 +4,7 @@ from sentence_transformers import (
 
 from rag.config import EMBEDDING_MODEL
 
-print("\nLoading the embedding model...\n")
+print("\nLoading embedding model...\n")
 
 embedding_model = SentenceTransformer(
     EMBEDDING_MODEL

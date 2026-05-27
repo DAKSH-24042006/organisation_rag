@@ -5,3 +5,5 @@ numpy
 requests
 fastapi
 uvicorn
+tree-sitter
+tree-sitter-languages

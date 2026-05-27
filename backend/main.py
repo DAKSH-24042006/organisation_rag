@@ -1,4 +1,5 @@
 from rag.indexer import (
+
     index_repositories,
     build_documents,
     generate_embeddings,
@@ -6,54 +7,32 @@ from rag.indexer import (
     save_metadata
 )
 
-from rag.orchestrator import (
-    orchestrate_query
-)
+from rag.retriever import retrieve
 
 # =========================================================
-# ENTERPRISE AI CODING PLATFORM
+# INDEXING PIPELINE
 # =========================================================
 
-print("\n" + "=" * 80)
-
-print("ENTERPRISE AI CODING PLATFORM")
-
-print("=" * 80)
-
-# =========================================================
-# INDEX REPOSITORIES
-# =========================================================
+print("\nStarting indexing pipeline...\n")
 
 index_repositories()
 
-# =========================================================
-# BUILD DOCUMENTS
-# =========================================================
+print("\nBuilding documents...\n")
 
-documents, _ = build_documents()
-
-# =========================================================
-# GENERATE EMBEDDINGS
-# =========================================================
+documents, bm25_corpus = build_documents()
 
 embeddings = generate_embeddings(
     documents
 )
 
-# =========================================================
-# STORE VECTORS
-# =========================================================
-
 store_vectors(embeddings)
-
-# =========================================================
-# SAVE METADATA
-# =========================================================
 
 save_metadata()
 
+print("\nIndexing completed successfully.\n")
+
 # =========================================================
-# INTERACTIVE LOOP
+# INTERACTIVE QUERY LOOP
 # =========================================================
 
 while True:
@@ -65,24 +44,12 @@ while True:
     if query.lower() == "exit":
         break
 
-    try:
+    context = retrieve(query)
 
-        final_response = orchestrate_query(
-            query
-        )
+    print("\n" + "=" * 60)
 
-        print("\n" + "=" * 80)
+    print("RETRIEVED CONTEXT")
 
-        print("FINAL RESPONSE")
+    print("=" * 60)
 
-        print("=" * 80)
-
-        print(final_response)
-
-    except Exception as e:
-
-        print("\nORCHESTRATION ERROR:")
-
-        print(str(e))
-
-print("\nExiting Enterprise AI System.")
+    print(context)

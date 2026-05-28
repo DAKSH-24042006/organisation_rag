@@ -1,6 +1,18 @@
+# =========================================================
+# standard libraries
+# =========================================================
+
 import os
 import re
 import json
+
+from rag.semantic_analyzer import (
+    analyze_code_semantics
+)
+
+# =========================================================
+# qdrant
+# =========================================================
 
 from qdrant_client import QdrantClient
 
@@ -9,6 +21,10 @@ from qdrant_client.models import (
     Distance,
     PointStruct
 )
+
+# =========================================================
+# parser
+# =========================================================
 
 from rag.parser import (
 
@@ -19,7 +35,15 @@ from rag.parser import (
     extract_react_components
 )
 
+# =========================================================
+# embeddings
+# =========================================================
+
 from rag.embeddings import embedding_model
+
+# =========================================================
+# config
+# =========================================================
 
 from rag.config import (
 
@@ -91,6 +115,14 @@ IGNORED_FILES = [
 code_chunks = []
 
 # =========================================================
+# VECTOR SIZE AUTO DETECTION
+# =========================================================
+
+VECTOR_SIZE = len(
+    embedding_model.encode(["test"])[0]
+)
+
+# =========================================================
 # QDRANT CLIENT
 # =========================================================
 
@@ -111,7 +143,7 @@ client.recreate_collection(
 
     vectors_config=VectorParams(
 
-        size=384,
+        size=VECTOR_SIZE,
 
         distance=Distance.COSINE
     )
@@ -161,6 +193,86 @@ def create_chunk(
     if dependencies is None:
         dependencies = []
 
+    # =====================================================
+    # DEDUPLICATION
+    # =====================================================
+
+    existing = {
+
+        c["name"] + c["path"]
+
+        for c in code_chunks
+    }
+
+    identifier = name + file_path
+
+    if identifier in existing:
+        return
+
+    # =====================================================
+    # CONTENT LIMIT
+    # =====================================================
+
+    content = clean_text(
+        content[:4000]
+    )
+
+    # =====================================================
+    # SEMANTIC ANALYSIS
+    # =====================================================
+
+    semantic_data = analyze_code_semantics(
+
+        content
+    )
+
+    # =====================================================
+    # EMBEDDING TEXT
+    # =====================================================
+
+    embedding_text = f"""
+
+Repository:
+{repo_metadata['name']}
+
+Team:
+{repo_metadata['team']}
+
+Framework:
+{repo_metadata['framework']}
+
+Architecture:
+{repo_metadata['architecture']}
+
+Language:
+{language}
+
+Chunk Type:
+{chunk_type}
+
+Business Role:
+{semantic_data['business_role']}
+
+Semantic Tags:
+{' '.join(semantic_data['semantic_tags'])}
+
+Summary:
+{semantic_data['summary']}
+
+Dependencies:
+{' '.join(dependencies)}
+
+Imports:
+{' '.join(imports)}
+
+Code:
+{content}
+"""
+
+    # =====================================================
+    # CHUNK OBJECT
+    # =====================================================
+
     chunk = {
 
         "repo_name":
@@ -202,8 +314,44 @@ def create_chunk(
         "docstring":
         docstring,
 
+        "semantic_tags":
+        semantic_data["semantic_tags"],
+
+        "business_role":
+        semantic_data["business_role"],
+
+        "summary":
+        semantic_data["summary"],
+
+        "calls":
+        semantic_data["calls"],
+
+        "conditions":
+        semantic_data["conditions"],
+
+        "loops":
+        semantic_data["loops"],
+
+        "exceptions":
+        semantic_data["exceptions"],
+
+        "returns":
+        semantic_data["returns"],
+
+        "search_text":
+        (
+            semantic_data["summary"]
+            + " "
+            + " ".join(
+                semantic_data["semantic_tags"]
+            )
+        ),
+
         "content":
-        clean_text(content)
+        content,
+
+        "embedding_text":
+        embedding_text
     }
 
     code_chunks.append(chunk)
@@ -330,41 +478,13 @@ def process_code_file(
 
         for func in functions:
 
-            semantic_type = "function"
-
-            function_name = func["name"].lower()
-
-            # =============================================
-            # ARCHITECTURE DETECTION
-            # =============================================
-
-            if "api" in function_name:
-
-                semantic_type = "api_service"
-
-            elif "hook" in function_name:
-
-                semantic_type = "react_hook"
-
-            elif "route" in function_name:
-
-                semantic_type = "route_handler"
-
-            elif "auth" in function_name:
-
-                semantic_type = "auth_service"
-
-            elif "dashboard" in function_name:
-
-                semantic_type = "dashboard_component"
-
             create_chunk(
 
                 repo_metadata=repo_metadata,
 
                 language=language,
 
-                chunk_type=semantic_type,
+                chunk_type="semantic_function",
 
                 name=func["name"],
 
@@ -409,7 +529,7 @@ def process_code_file(
             )
 
         # =================================================
-        # FILE CHUNK ONLY AS FALLBACK
+        # FILE CHUNK FALLBACK
         # =================================================
 
         if (
@@ -542,7 +662,7 @@ def build_documents():
 
     for chunk in code_chunks:
 
-        document = f'''
+        document = f"""
 
 Repository:
 {chunk['repo_name']}
@@ -562,21 +682,24 @@ Language:
 Type:
 {chunk['type']}
 
-Name:
-{chunk['name']}
+Business Role:
+{chunk['business_role']}
+
+Semantic Tags:
+{' '.join(chunk['semantic_tags'])}
+
+Summary:
+{chunk['summary']}
 
 Imports:
-{" ".join(chunk['imports'])}
+{' '.join(chunk['imports'])}
 
 Dependencies:
-{" ".join(chunk['dependencies'])}
-
-Docstring:
-{chunk['docstring']}
+{' '.join(chunk['dependencies'])}
 
 Code:
 {chunk['content']}
-'''
+"""
 
         documents.append(document)
 
@@ -586,6 +709,7 @@ Code:
 
     return documents, bm25_corpus
 
+
 # =========================================================
 # GENERATE EMBEDDINGS
 # =========================================================
@@ -594,14 +718,45 @@ def generate_embeddings(documents):
 
     print("\nGenerating embeddings...\n")
 
+    # =====================================================
+    # SAFE EMBEDDING INPUTS
+    # =====================================================
+
+    embedding_inputs = []
+
+    for chunk in code_chunks:
+
+        embedding_text = chunk[
+            "embedding_text"
+        ]
+
+        # ================================================
+        # TOKEN SAFETY LIMIT
+        # ================================================
+
+        embedding_text = (
+            embedding_text[:2000]
+        )
+
+        embedding_inputs.append(
+            embedding_text
+        )
+
+    # =====================================================
+    # GENERATE EMBEDDINGS
+    # =====================================================
+
     embeddings = embedding_model.encode(
 
-        documents,
+        embedding_inputs,
 
-        show_progress_bar=True
+        show_progress_bar=True,
+
+        batch_size=4
     )
 
     return embeddings
+
 
 # =========================================================
 # STORE VECTORS
@@ -680,7 +835,29 @@ def save_metadata():
 
             f,
 
-            indent=2
+            indent=2,
+
+            default=str
         )
 
     print("\nMetadata saved.")
+
+# =========================================================
+# MAIN
+# =========================================================
+
+if __name__ == "__main__":
+
+    index_repositories()
+
+    documents, bm25_corpus = build_documents()
+
+    embeddings = generate_embeddings(
+        documents
+    )
+
+    store_vectors(embeddings)
+
+    save_metadata()
+
+    print("\nINDEXING COMPLETE\n")

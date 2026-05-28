@@ -1,160 +1,351 @@
+# =========================================================
+# retriever.py
+# =========================================================
+
+import json
 import numpy as np
 
 from rank_bm25 import BM25Okapi
 
-from sentence_transformers import (
-    CrossEncoder
-)
+from qdrant_client import QdrantClient
 
-from rag.embeddings import (
-    embedding_model
-)
+from rag.embeddings import embedding_model
 
-from rag.indexer import (
+from rag.config import (
 
-    client,
-    COLLECTION_NAME,
-    build_documents,
-    code_chunks
+    QDRANT_HOST,
+    QDRANT_PORT,
+    COLLECTION_NAME
 )
 
 # =========================================================
-# RERANKER
+# QDRANT CLIENT
 # =========================================================
 
-reranker = CrossEncoder(
-    "cross-encoder/ms-marco-MiniLM-L-6-v2"
+client = QdrantClient(
+
+    host=QDRANT_HOST,
+
+    port=QDRANT_PORT
 )
 
-bm25 = None
-
 # =========================================================
-# INITIALIZE BM25
+# LOAD METADATA
 # =========================================================
 
-def initialize_bm25():
+with open(
 
-    global bm25
+    "data/repository_index.json",
 
-    documents, bm25_corpus = build_documents()
+    "r",
 
-    bm25 = BM25Okapi(
-        bm25_corpus
+    encoding="utf-8"
+
+) as f:
+
+    code_chunks = json.load(f)
+
+# =========================================================
+# BUILD BM25 INDEX
+# =========================================================
+
+bm25_corpus = []
+
+for chunk in code_chunks:
+
+    text = (
+
+        chunk.get("search_text", "")
+        + " "
+        + chunk.get("summary", "")
+        + " "
+        + " ".join(
+            chunk.get("semantic_tags", [])
+        )
+        + " "
+        + chunk.get("content", "")
     )
 
+    tokens = text.lower().split()
+
+    bm25_corpus.append(tokens)
+
+bm25 = BM25Okapi(bm25_corpus)
+
 # =========================================================
-# QUERY FILTERS
+# QUERY UNDERSTANDING
 # =========================================================
 
-def detect_query_filters(query):
+def understand_query(query):
 
-    query = query.lower()
+    query_lower = query.lower()
 
-    filters = {}
+    semantic_tags = []
 
-    if any(word in query for word in [
+    architecture = None
 
-        "react",
-        "component",
-        "dashboard",
-        "frontend",
-        "jsx",
-        "tsx"
+    business_roles = []
 
-    ]):
+    # =====================================================
+    # AUTHENTICATION
+    # =====================================================
 
-        filters["frontend"] = True
+    auth_keywords = [
 
-    if any(word in query for word in [
+        "jwt",
+        "token",
+        "auth",
+        "authentication",
+        "login",
+        "signup",
+        "security",
+        "session"
+    ]
+
+    # =====================================================
+    # DATABASE
+    # =====================================================
+
+    db_keywords = [
+
+        "database",
+        "sql",
+        "query",
+        "orm",
+        "model",
+        "postgres",
+        "mysql",
+        "mongodb"
+    ]
+
+    # =====================================================
+    # API
+    # =====================================================
+
+    api_keywords = [
 
         "api",
-        "backend",
-        "database",
-        "service"
+        "endpoint",
+        "route",
+        "request",
+        "response",
+        "backend"
+    ]
 
-    ]):
+    # =====================================================
+    # CACHE
+    # =====================================================
 
-        filters["backend"] = True
+    cache_keywords = [
 
-    return filters
+        "redis",
+        "cache",
+        "caching"
+    ]
+
+    # =====================================================
+    # FRONTEND
+    # =====================================================
+
+    frontend_keywords = [
+
+        "react",
+        "frontend",
+        "component",
+        "ui",
+        "dashboard",
+        "hook"
+    ]
+
+    # =====================================================
+    # AUTH DETECTION
+    # =====================================================
+
+    if any(
+
+        word in query_lower
+
+        for word in auth_keywords
+    ):
+
+        semantic_tags.extend([
+
+            "authentication",
+            "security",
+            "jwt"
+        ])
+
+        business_roles.append(
+            "authentication_service"
+        )
+
+    # =====================================================
+    # DATABASE DETECTION
+    # =====================================================
+
+    if any(
+
+        word in query_lower
+
+        for word in db_keywords
+    ):
+
+        semantic_tags.extend([
+
+            "database",
+            "data_access"
+        ])
+
+        business_roles.append(
+            "database_service"
+        )
+
+    # =====================================================
+    # API DETECTION
+    # =====================================================
+
+    if any(
+
+        word in query_lower
+
+        for word in api_keywords
+    ):
+
+        semantic_tags.extend([
+
+            "api",
+            "backend"
+        ])
+
+        business_roles.append(
+            "api_service"
+        )
+
+        architecture = "backend"
+
+    # =====================================================
+    # CACHE DETECTION
+    # =====================================================
+
+    if any(
+
+        word in query_lower
+
+        for word in cache_keywords
+    ):
+
+        semantic_tags.extend([
+
+            "cache",
+            "redis",
+            "performance"
+        ])
+
+        business_roles.append(
+            "cache_service"
+        )
+
+    # =====================================================
+    # FRONTEND DETECTION
+    # =====================================================
+
+    if any(
+
+        word in query_lower
+
+        for word in frontend_keywords
+    ):
+
+        semantic_tags.extend([
+
+            "frontend",
+            "react",
+            "ui"
+        ])
+
+        architecture = "frontend"
+
+    semantic_tags = list(
+        set(semantic_tags)
+    )
+
+    return {
+
+        "query": query,
+
+        "semantic_tags": semantic_tags,
+
+        "business_roles": business_roles,
+
+        "architecture": architecture
+    }
 
 # =========================================================
-# APPLY METADATA FILTERS
+# BUILD ENHANCED QUERY
 # =========================================================
 
-def apply_metadata_filters(
+def build_enhanced_query(query_data):
 
-    results,
-    filters
-):
+    enhanced_query = f"""
 
-    filtered = []
+User Request:
+{query_data['query']}
 
-    for result in results:
+Semantic Intent:
+{' '.join(query_data['semantic_tags'])}
 
-        payload = result["payload"]
+Business Roles:
+{' '.join(query_data['business_roles'])}
 
-        if filters.get("frontend"):
+Architecture:
+{query_data['architecture']}
+"""
 
-            if payload["language"] not in [
-
-                "javascript",
-                "typescript"
-            ]:
-
-                continue
-
-        filtered.append(result)
-
-    return filtered
+    return enhanced_query
 
 # =========================================================
-# DENSE RETRIEVAL
+# VECTOR SEARCH
 # =========================================================
 
-def dense_retrieval(
+def vector_search(
 
     query,
-    top_k=20
+    top_k=10
 ):
 
     query_embedding = embedding_model.encode(
         query
-    )
+    ).tolist()
 
     results = client.query_points(
 
         collection_name=COLLECTION_NAME,
 
-        query=query_embedding.tolist(),
+        query=query_embedding,
 
         limit=top_k
+    )
 
-    ).points
+    formatted_results = []
 
-    dense_results = []
+    for result in results.points:
 
-    for result in results:
+        payload = result.payload
 
-        dense_results.append({
+        payload["vector_score"] = result.score
 
-            "payload":
-            result.payload,
+        formatted_results.append(payload)
 
-            "score":
-            result.score
-        })
-
-    return dense_results
+    return formatted_results
 
 # =========================================================
-# BM25 RETRIEVAL
+# BM25 SEARCH
 # =========================================================
 
-def bm25_retrieval(
+def bm25_search(
 
     query,
-    top_k=20
+    top_k=10
 ):
 
     tokenized_query = query.lower().split()
@@ -163,155 +354,369 @@ def bm25_retrieval(
         tokenized_query
     )
 
-    ranked_indices = np.argsort(
-        scores
-    )[::-1][:top_k]
+    ranked_indices = np.argsort(scores)[::-1]
 
     results = []
 
-    for idx in ranked_indices:
+    for idx in ranked_indices[:top_k]:
 
-        results.append({
+        chunk = code_chunks[idx].copy()
 
-            "payload":
-            code_chunks[idx],
-
-            "score":
+        chunk["bm25_score"] = float(
             scores[idx]
-        })
+        )
+
+        results.append(chunk)
 
     return results
 
 # =========================================================
-# HYBRID FUSION
+# HYBRID MERGING
 # =========================================================
 
-def hybrid_fusion(
+def hybrid_merge(
 
-    dense_results,
+    vector_results,
     bm25_results
 ):
 
-    combined = {}
+    merged = {}
 
-    for result in dense_results:
+    # =====================================================
+    # VECTOR RESULTS
+    # =====================================================
 
-        key = (
-            result["payload"]["path"]
-            +
-            result["payload"]["name"]
-        )
-
-        combined[key] = result
-
-    for result in bm25_results:
+    for chunk in vector_results:
 
         key = (
-            result["payload"]["path"]
-            +
-            result["payload"]["name"]
+
+            chunk["name"]
+            + chunk["path"]
         )
 
-        if key not in combined:
+        merged[key] = chunk
 
-            combined[key] = result
+        merged[key]["hybrid_score"] = (
 
-    return list(
-        combined.values()
-    )
+            chunk.get("vector_score", 0) * 0.7
+        )
 
-# =========================================================
-# RERANKING
-# =========================================================
+    # =====================================================
+    # BM25 RESULTS
+    # =====================================================
 
-def rerank_results(
+    for chunk in bm25_results:
 
-    query,
-    results,
-    top_k=5
-):
+        key = (
 
-    pairs = []
+            chunk["name"]
+            + chunk["path"]
+        )
 
-    for result in results:
+        if key not in merged:
 
-        pairs.append((
+            merged[key] = chunk
 
-            query,
+            merged[key]["hybrid_score"] = 0
 
-            result["payload"]["content"]
-        ))
+        merged[key]["hybrid_score"] += (
 
-    scores = reranker.predict(
-        pairs
-    )
+            chunk.get("bm25_score", 0) * 0.3
+        )
 
-    reranked = []
+    # =====================================================
+    # SORT
+    # =====================================================
 
-    for result, score in zip(
+    merged_results = sorted(
 
-        results,
-        scores
-    ):
+        merged.values(),
 
-        reranked.append({
-
-            "payload":
-            result["payload"],
-
-            "score":
-            float(score)
-        })
-
-    reranked.sort(
-
-        key=lambda x: x["score"],
+        key=lambda x: x[
+            "hybrid_score"
+        ],
 
         reverse=True
     )
 
-    return reranked[:top_k]
+    return merged_results
 
 # =========================================================
-# MAIN RETRIEVAL
+# METADATA FILTERING
 # =========================================================
 
-def retrieve(query):
+def filter_results(
 
-    global bm25
+    results,
+    query_data
+):
 
-    if bm25 is None:
+    filtered = []
 
-        initialize_bm25()
+    for chunk in results:
 
-    filters = detect_query_filters(
-        query
+        score_bonus = 0
+
+        # =================================================
+        # TAG MATCHING
+        # =================================================
+
+        chunk_tags = set(
+
+            chunk.get(
+                "semantic_tags",
+                []
+            )
+        )
+
+        query_tags = set(
+            query_data[
+                "semantic_tags"
+            ]
+        )
+
+        overlap = len(
+
+            chunk_tags.intersection(
+                query_tags
+            )
+        )
+
+        score_bonus += overlap * 0.2
+
+        # =================================================
+        # ROLE MATCHING
+        # =================================================
+
+        if (
+
+            chunk.get(
+                "business_role"
+            )
+
+            in
+
+            query_data[
+                "business_roles"
+            ]
+        ):
+
+            score_bonus += 0.5
+
+        # =================================================
+        # FINAL SCORE
+        # =================================================
+
+        chunk["final_score"] = (
+
+            chunk.get(
+                "hybrid_score",
+                0
+            )
+
+            + score_bonus
+        )
+
+        filtered.append(chunk)
+
+    filtered = sorted(
+
+        filtered,
+
+        key=lambda x: x[
+            "final_score"
+        ],
+
+        reverse=True
     )
 
-    dense_results = dense_retrieval(
-        query
+    return filtered
+
+# =========================================================
+# CONTEXT BUILDER
+# =========================================================
+
+def build_context(
+
+    retrieved_chunks,
+    max_chunks=5
+):
+
+    context = ""
+
+    for chunk in retrieved_chunks[:max_chunks]:
+
+        chunk_context = f"""
+
+==================================================
+FILE:
+{chunk['file']}
+
+FUNCTION / CLASS:
+{chunk['name']}
+
+BUSINESS ROLE:
+{chunk['business_role']}
+
+SEMANTIC TAGS:
+{' '.join(chunk['semantic_tags'])}
+
+SUMMARY:
+{chunk['summary']}
+
+CODE:
+{chunk['content']}
+==================================================
+
+"""
+
+        context += chunk_context
+
+    return context
+
+# =========================================================
+# MAIN RETRIEVAL PIPELINE
+# =========================================================
+
+def retrieve_relevant_code(
+
+    user_query,
+    top_k=10
+):
+
+    print("\nUNDERSTANDING QUERY...\n")
+
+    query_data = understand_query(
+        user_query
     )
 
-    bm25_results = bm25_retrieval(
-        query
+    enhanced_query = build_enhanced_query(
+        query_data
     )
 
-    hybrid_results = hybrid_fusion(
+    print("\nRUNNING VECTOR SEARCH...\n")
 
-        dense_results,
+    vector_results = vector_search(
+
+        enhanced_query,
+
+        top_k=top_k
+    )
+
+    print("\nRUNNING BM25 SEARCH...\n")
+
+    bm25_results = bm25_search(
+
+        enhanced_query,
+
+        top_k=top_k
+    )
+
+    print("\nMERGING RESULTS...\n")
+
+    merged_results = hybrid_merge(
+
+        vector_results,
         bm25_results
     )
 
-    filtered_results = apply_metadata_filters(
+    print("\nFILTERING RESULTS...\n")
 
-        hybrid_results,
-        filters
+    filtered_results = filter_results(
+
+        merged_results,
+        query_data
     )
 
-    reranked_results = rerank_results(
+    print("\nBUILDING CONTEXT...\n")
 
-        query,
+    context = build_context(
         filtered_results
     )
 
-    return reranked_results
+    return {
+
+        "query_data": query_data,
+
+        "retrieved_chunks":
+        filtered_results,
+
+        "context": context
+    }
+
+# =========================================================
+# TEST
+# =========================================================
+
+if __name__ == "__main__":
+
+    query = input(
+        "\nEnter Query: "
+    )
+
+    results = retrieve_relevant_code(
+        query
+    )
+
+    print("\n" + "=" * 80)
+
+    print("QUERY UNDERSTANDING")
+
+    print("=" * 80)
+
+    print(
+
+        json.dumps(
+
+            results["query_data"],
+
+            indent=2
+        )
+    )
+
+    print("\n" + "=" * 80)
+
+    print("TOP RETRIEVED RESULTS")
+
+    print("=" * 80)
+
+    for idx, chunk in enumerate(
+
+        results[
+            "retrieved_chunks"
+        ][:5]
+
+    ):
+
+        print(f"\nRESULT {idx+1}")
+
+        print(
+            f"Name: {chunk['name']}"
+        )
+
+        print(
+            f"File: {chunk['file']}"
+        )
+
+        print(
+            f"Role: "
+            f"{chunk['business_role']}"
+        )
+
+        print(
+            f"Tags: "
+            f"{chunk['semantic_tags']}"
+        )
+
+        print(
+            f"Score: "
+            f"{chunk['final_score']}"
+        )
+
+    print("\n" + "=" * 80)
+
+    print("FINAL CONTEXT")
+
+    print("=" * 80)
+
+    print(results["context"])

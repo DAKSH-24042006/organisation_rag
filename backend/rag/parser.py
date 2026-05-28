@@ -19,8 +19,16 @@ LANGUAGES = {
         tree_sitter_javascript.language()
     ),
 
+    ".jsx": Language(
+        tree_sitter_javascript.language()
+    ),
+
     ".ts": Language(
         tree_sitter_typescript.language_typescript()
+    ),
+
+    ".tsx": Language(
+        tree_sitter_typescript.language_tsx()
     ),
 
     ".java": Language(
@@ -29,30 +37,74 @@ LANGUAGES = {
 }
 
 # =========================================================
-# NODE TYPES
+# FUNCTION NODES
 # =========================================================
 
 FUNCTION_NODES = {
 
-    ".py": "function_definition",
+    ".py": [
+        "function_definition"
+    ],
 
-    ".js": "function_declaration",
+    ".js": [
+        "function_declaration",
+        "method_definition"
+    ],
 
-    ".ts": "function_declaration",
+    ".jsx": [
+        "function_declaration",
+        "method_definition"
+    ],
 
-    ".java": "method_declaration"
+    ".ts": [
+        "function_declaration",
+        "method_definition"
+    ],
+
+    ".tsx": [
+        "function_declaration",
+        "method_definition"
+    ],
+
+    ".java": [
+        "method_declaration"
+    ]
 }
+
+# =========================================================
+# CLASS NODES
+# =========================================================
 
 CLASS_NODES = {
 
-    ".py": "class_definition",
+    ".py": [
+        "class_definition"
+    ],
 
-    ".js": "class_declaration",
+    ".js": [
+        "class_declaration"
+    ],
 
-    ".ts": "class_declaration",
+    ".jsx": [
+        "class_declaration"
+    ],
 
-    ".java": "class_declaration"
+    ".ts": [
+        "class_declaration"
+    ],
+
+    ".tsx": [
+        "class_declaration"
+    ],
+
+    ".java": [
+        "class_declaration"
+    ]
 }
+
+# =========================================================
+# IMPORT NODES
+# =========================================================
 
 IMPORT_NODES = {
 
@@ -65,7 +117,15 @@ IMPORT_NODES = {
         "import_statement"
     ],
 
+    ".jsx": [
+        "import_statement"
+    ],
+
     ".ts": [
+        "import_statement"
+    ],
+
+    ".tsx": [
         "import_statement"
     ],
 
@@ -80,12 +140,14 @@ IMPORT_NODES = {
 
 def get_parser(extension):
 
-    language = LANGUAGES[extension]
+    parser = Parser(
+        LANGUAGES[extension]
+    )
 
-    return Parser(language)
+    return parser
 
 # =========================================================
-# TREE TRAVERSAL
+# TREE WALKER
 # =========================================================
 
 def traverse_tree(node):
@@ -106,7 +168,9 @@ def traverse_tree(node):
 
 def parse_code(code, extension):
 
-    parser = get_parser(extension)
+    parser = get_parser(
+        extension
+    )
 
     tree = parser.parse(
         bytes(code, "utf8")
@@ -115,10 +179,76 @@ def parse_code(code, extension):
     return tree
 
 # =========================================================
+# EXTRACT REACT COMPONENTS
+# =========================================================
+
+def extract_react_components(
+
+    code,
+    extension
+):
+
+    if extension not in [
+        ".jsx",
+        ".tsx"
+    ]:
+
+        return []
+
+    tree = parse_code(
+        code,
+        extension
+    )
+
+    root = tree.root_node
+
+    components = []
+
+    for node in traverse_tree(root):
+
+        if node.type == "function_declaration":
+
+            component_code = code[
+                node.start_byte:
+                node.end_byte
+            ]
+
+            if "return (" in component_code:
+
+                component_name = "unknown"
+
+                for child in node.children:
+
+                    if child.type == "identifier":
+
+                        component_name = code[
+                            child.start_byte:
+                            child.end_byte
+                        ]
+
+                components.append({
+
+                    "name":
+                    component_name,
+
+                    "content":
+                    component_code,
+
+                    "type":
+                    "react_component"
+                })
+
+    return components
+
+# =========================================================
 # EXTRACT FUNCTIONS
 # =========================================================
 
-def extract_functions(code, extension):
+def extract_functions(
+
+    code,
+    extension
+):
 
     tree = parse_code(
         code,
@@ -129,13 +259,11 @@ def extract_functions(code, extension):
 
     functions = []
 
-    target_node = FUNCTION_NODES[
-        extension
-    ]
-
     for node in traverse_tree(root):
 
-        if node.type == target_node:
+        if node.type in FUNCTION_NODES[
+            extension
+        ]:
 
             function_code = code[
                 node.start_byte:
@@ -164,11 +292,8 @@ def extract_functions(code, extension):
                 "content":
                 function_code,
 
-                "start_line":
-                node.start_point[0] + 1,
-
-                "end_line":
-                node.end_point[0] + 1
+                "type":
+                "function"
             })
 
     return functions
@@ -177,7 +302,11 @@ def extract_functions(code, extension):
 # EXTRACT CLASSES
 # =========================================================
 
-def extract_classes(code, extension):
+def extract_classes(
+
+    code,
+    extension
+):
 
     tree = parse_code(
         code,
@@ -188,13 +317,11 @@ def extract_classes(code, extension):
 
     classes = []
 
-    target_node = CLASS_NODES[
-        extension
-    ]
-
     for node in traverse_tree(root):
 
-        if node.type == target_node:
+        if node.type in CLASS_NODES[
+            extension
+        ]:
 
             class_code = code[
                 node.start_byte:
@@ -223,11 +350,8 @@ def extract_classes(code, extension):
                 "content":
                 class_code,
 
-                "start_line":
-                node.start_point[0] + 1,
-
-                "end_line":
-                node.end_point[0] + 1
+                "type":
+                "class"
             })
 
     return classes
@@ -236,7 +360,11 @@ def extract_classes(code, extension):
 # EXTRACT IMPORTS
 # =========================================================
 
-def extract_imports(code, extension):
+def extract_imports(
+
+    code,
+    extension
+):
 
     tree = parse_code(
         code,
@@ -247,13 +375,11 @@ def extract_imports(code, extension):
 
     imports = []
 
-    target_nodes = IMPORT_NODES[
-        extension
-    ]
-
     for node in traverse_tree(root):
 
-        if node.type in target_nodes:
+        if node.type in IMPORT_NODES[
+            extension
+        ]:
 
             import_code = code[
                 node.start_byte:
@@ -268,7 +394,11 @@ def extract_imports(code, extension):
 # EXTRACT DEPENDENCIES
 # =========================================================
 
-def extract_dependencies(code, extension):
+def extract_dependencies(
+
+    code,
+    extension
+):
 
     tree = parse_code(
         code,
@@ -294,6 +424,90 @@ def extract_dependencies(code, extension):
                     function_node.end_byte
                 ]
 
-                dependencies.append(dependency)
+                dependencies.append(
+                    dependency
+                )
 
     return list(set(dependencies))
+
+import re
+
+def extract_react_components(
+
+    source_code,
+    extension
+):
+
+    components = []
+
+    if extension not in [
+
+        ".js",
+        ".jsx",
+        ".ts",
+        ".tsx"
+    ]:
+
+        return components
+
+    # ============================================
+    # FUNCTION COMPONENTS
+    # ============================================
+
+    function_pattern = re.finditer(
+
+        r'const\s+([A-Z][A-Za-z0-9_]*)\s*=\s*\(.*?\)\s*=>\s*\{',
+
+        source_code,
+
+        re.DOTALL
+    )
+
+    for match in function_pattern:
+
+        component_name = match.group(1)
+
+        start = match.start()
+
+        component_code = source_code[
+            start:start + 4000
+        ]
+
+        components.append({
+
+            "name": component_name,
+
+            "content": component_code
+        })
+
+    # ============================================
+    # FUNCTION DECLARATIONS
+    # ============================================
+
+    declaration_pattern = re.finditer(
+
+        r'function\s+([A-Z][A-Za-z0-9_]*)\s*\(',
+
+        source_code,
+
+        re.DOTALL
+    )
+
+    for match in declaration_pattern:
+
+        component_name = match.group(1)
+
+        start = match.start()
+
+        component_code = source_code[
+            start:start + 4000
+        ]
+
+        components.append({
+
+            "name": component_name,
+
+            "content": component_code
+        })
+
+    return components

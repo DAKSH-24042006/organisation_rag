@@ -1,50 +1,96 @@
-from rag.retriever import (
-    retrieve,
-    compress_context
-)
-
-from rag.prompt_builder import (
-    detect_intent,
-    build_prompt
-)
-
-from rag.llm_engine import (
-    generate_llm_response
-)
+from rag.retriever import retrieve
 
 # =========================================================
-# MAIN ORCHESTRATOR
+# CONTEXT COMPRESSION
 # =========================================================
 
-def orchestrate_query(query):
+def compress_context(results):
 
-    print("\nDetecting query intent...\n")
+    context_blocks = []
 
-    intent = detect_intent(query)
+    for result in results:
 
-    print(f"Intent: {intent}")
+        payload = result["payload"]
 
-    print("\nRetrieving chunks...\n")
+        context_blocks.append(f'''
 
-    retrieved_chunks = retrieve(query)
+Repository:
+{payload['repo_name']}
 
-    print(
-        f"Retrieved "
-        f"{len(retrieved_chunks)} chunks"
+File:
+{payload['file']}
+
+Type:
+{payload['type']}
+
+Name:
+{payload['name']}
+
+Code:
+{payload['content']}
+''')
+
+    return "\n".join(
+        context_blocks
     )
 
-    context = compress_context(
-        retrieved_chunks
+# =========================================================
+# PROMPT BUILDER
+# =========================================================
+
+def build_prompt(
+
+    query,
+    context
+):
+
+    return f'''
+
+You are an enterprise AI coding assistant.
+
+Use the repository context below
+for repository-aware generation.
+
+Repository Context:
+
+{context}
+
+User Request:
+
+{query}
+
+Generate production-quality code
+following repository conventions.
+'''
+
+# =========================================================
+# MAIN PIPELINE
+# =========================================================
+
+def run_pipeline(query):
+
+    retrieved_results = retrieve(
+        query
+    )
+
+    compressed_context = compress_context(
+        retrieved_results
     )
 
     prompt = build_prompt(
+
         query,
-        intent,
-        context
+        compressed_context
     )
 
-    final_response = generate_llm_response(
+    return {
+
+        "results":
+        retrieved_results,
+
+        "context":
+        compressed_context,
+
+        "prompt":
         prompt
-    )
-
-    return final_response
+    }

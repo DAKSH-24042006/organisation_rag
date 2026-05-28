@@ -2,7 +2,13 @@ from sentence_transformers import (
     SentenceTransformer
 )
 
-from rag.config import EMBEDDING_MODEL
+# =========================================================
+# CODE EMBEDDING MODEL
+# =========================================================
+
+EMBEDDING_MODEL = (
+    "BAAI/bge-small-en-v1.5"
+)
 
 print("\nLoading embedding model...\n")
 

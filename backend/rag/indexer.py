@@ -15,7 +15,8 @@ from rag.parser import (
     extract_functions,
     extract_classes,
     extract_imports,
-    extract_dependencies
+    extract_dependencies,
+    extract_react_components
 )
 
 from rag.embeddings import embedding_model
@@ -38,7 +39,11 @@ SUPPORTED_EXTENSIONS = {
 
     ".js": "javascript",
 
+    ".jsx": "javascript",
+
     ".ts": "typescript",
+
+    ".tsx": "typescript",
 
     ".java": "java"
 }
@@ -283,6 +288,37 @@ def process_code_file(
         )
 
         # =================================================
+        # REACT COMPONENTS
+        # =================================================
+
+        react_components = extract_react_components(
+
+            source_code,
+            extension
+        )
+
+        for component in react_components:
+
+            create_chunk(
+
+                repo_metadata=repo_metadata,
+
+                language=language,
+
+                chunk_type="react_component",
+
+                name=component["name"],
+
+                file_path=file_path,
+
+                content=component["content"],
+
+                imports=imports,
+
+                dependencies=dependencies
+            )
+
+        # =================================================
         # FUNCTIONS
         # =================================================
 
@@ -294,13 +330,41 @@ def process_code_file(
 
         for func in functions:
 
+            semantic_type = "function"
+
+            function_name = func["name"].lower()
+
+            # =============================================
+            # ARCHITECTURE DETECTION
+            # =============================================
+
+            if "api" in function_name:
+
+                semantic_type = "api_service"
+
+            elif "hook" in function_name:
+
+                semantic_type = "react_hook"
+
+            elif "route" in function_name:
+
+                semantic_type = "route_handler"
+
+            elif "auth" in function_name:
+
+                semantic_type = "auth_service"
+
+            elif "dashboard" in function_name:
+
+                semantic_type = "dashboard_component"
+
             create_chunk(
 
                 repo_metadata=repo_metadata,
 
                 language=language,
 
-                chunk_type="function",
+                chunk_type=semantic_type,
 
                 name=func["name"],
 
@@ -345,29 +409,38 @@ def process_code_file(
             )
 
         # =================================================
-        # FILE-LEVEL CHUNK
+        # FILE CHUNK ONLY AS FALLBACK
         # =================================================
 
-        create_chunk(
+        if (
 
-            repo_metadata=repo_metadata,
+            len(functions) == 0
+            and
+            len(classes) == 0
+            and
+            len(react_components) == 0
+        ):
 
-            language=language,
+            create_chunk(
 
-            chunk_type="file",
+                repo_metadata=repo_metadata,
 
-            name=os.path.basename(
-                file_path
-            ),
+                language=language,
 
-            file_path=file_path,
+                chunk_type="file",
 
-            content=source_code,
+                name=os.path.basename(
+                    file_path
+                ),
 
-            imports=imports,
+                file_path=file_path,
 
-            dependencies=dependencies
-        )
+                content=source_code[:3000],
+
+                imports=imports,
+
+                dependencies=dependencies
+            )
 
         print(
             f"[INFO] Processed: {file_path}"
@@ -418,7 +491,9 @@ def index_repositories():
 
                         ".py",
                         ".js",
+                        ".jsx",
                         ".ts",
+                        ".tsx",
                         ".java"
 
                     ))

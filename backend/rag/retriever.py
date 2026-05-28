@@ -1,4 +1,3 @@
-import time
 import numpy as np
 
 from rank_bm25 import BM25Okapi
@@ -12,27 +11,20 @@ from rag.embeddings import (
 )
 
 from rag.indexer import (
+
     client,
     COLLECTION_NAME,
     build_documents,
     code_chunks
 )
 
-from rag.config import TOP_K
-
 # =========================================================
-# LOAD CROSS ENCODER
+# RERANKER
 # =========================================================
-
-print("\nLoading reranker model...\n")
 
 reranker = CrossEncoder(
     "cross-encoder/ms-marco-MiniLM-L-6-v2"
 )
-
-# =========================================================
-# BM25 PLACEHOLDER
-# =========================================================
 
 bm25 = None
 
@@ -46,26 +38,82 @@ def initialize_bm25():
 
     documents, bm25_corpus = build_documents()
 
-    if len(bm25_corpus) == 0:
-
-        raise ValueError(
-            "BM25 corpus is empty. "
-            "Index repositories first."
-        )
-
     bm25 = BM25Okapi(
         bm25_corpus
     )
 
-    print(
-        "\nBM25 initialized successfully.\n"
-    )
+# =========================================================
+# QUERY FILTERS
+# =========================================================
+
+def detect_query_filters(query):
+
+    query = query.lower()
+
+    filters = {}
+
+    if any(word in query for word in [
+
+        "react",
+        "component",
+        "dashboard",
+        "frontend",
+        "jsx",
+        "tsx"
+
+    ]):
+
+        filters["frontend"] = True
+
+    if any(word in query for word in [
+
+        "api",
+        "backend",
+        "database",
+        "service"
+
+    ]):
+
+        filters["backend"] = True
+
+    return filters
+
+# =========================================================
+# APPLY METADATA FILTERS
+# =========================================================
+
+def apply_metadata_filters(
+
+    results,
+    filters
+):
+
+    filtered = []
+
+    for result in results:
+
+        payload = result["payload"]
+
+        if filters.get("frontend"):
+
+            if payload["language"] not in [
+
+                "javascript",
+                "typescript"
+            ]:
+
+                continue
+
+        filtered.append(result)
+
+    return filtered
 
 # =========================================================
 # DENSE RETRIEVAL
 # =========================================================
 
 def dense_retrieval(
+
     query,
     top_k=20
 ):
@@ -104,11 +152,10 @@ def dense_retrieval(
 # =========================================================
 
 def bm25_retrieval(
+
     query,
     top_k=20
 ):
-
-    global bm25
 
     tokenized_query = query.lower().split()
 
@@ -120,11 +167,11 @@ def bm25_retrieval(
         scores
     )[::-1][:top_k]
 
-    bm25_results = []
+    results = []
 
     for idx in ranked_indices:
 
-        bm25_results.append({
+        results.append({
 
             "payload":
             code_chunks[idx],
@@ -133,7 +180,7 @@ def bm25_retrieval(
             scores[idx]
         })
 
-    return bm25_results
+    return results
 
 # =========================================================
 # HYBRID FUSION
@@ -142,17 +189,10 @@ def bm25_retrieval(
 def hybrid_fusion(
 
     dense_results,
-    bm25_results,
-
-    dense_weight=0.7,
-    bm25_weight=0.3
+    bm25_results
 ):
 
-    hybrid_results = {}
-
-    # =====================================================
-    # DENSE RESULTS
-    # =====================================================
+    combined = {}
 
     for result in dense_results:
 
@@ -162,18 +202,7 @@ def hybrid_fusion(
             result["payload"]["name"]
         )
 
-        hybrid_results[key] = {
-
-            "payload":
-            result["payload"],
-
-            "score":
-            result["score"] * dense_weight
-        }
-
-    # =====================================================
-    # BM25 RESULTS
-    # =====================================================
+        combined[key] = result
 
     for result in bm25_results:
 
@@ -183,65 +212,37 @@ def hybrid_fusion(
             result["payload"]["name"]
         )
 
-        if key in hybrid_results:
+        if key not in combined:
 
-            hybrid_results[key]["score"] += (
+            combined[key] = result
 
-                result["score"]
-                *
-                bm25_weight
-            )
-
-        else:
-
-            hybrid_results[key] = {
-
-                "payload":
-                result["payload"],
-
-                "score":
-                result["score"] * bm25_weight
-            }
-
-    results = list(
-        hybrid_results.values()
+    return list(
+        combined.values()
     )
-
-    results.sort(
-
-        key=lambda x: x["score"],
-
-        reverse=True
-    )
-
-    return results
 
 # =========================================================
-# RERANK RESULTS
+# RERANKING
 # =========================================================
 
 def rerank_results(
 
     query,
-    hybrid_results,
+    results,
     top_k=5
 ):
 
-    print("\nReranking results...\n")
-
     pairs = []
 
-    for result in hybrid_results:
+    for result in results:
 
-        chunk_text = result[
-            "payload"
-        ]["content"]
+        pairs.append((
 
-        pairs.append(
-            (query, chunk_text)
-        )
+            query,
 
-    rerank_scores = reranker.predict(
+            result["payload"]["content"]
+        ))
+
+    scores = reranker.predict(
         pairs
     )
 
@@ -249,9 +250,8 @@ def rerank_results(
 
     for result, score in zip(
 
-        hybrid_results,
-        rerank_scores
-
+        results,
+        scores
     ):
 
         reranked.append({
@@ -273,39 +273,7 @@ def rerank_results(
     return reranked[:top_k]
 
 # =========================================================
-# CONTEXT COMPRESSION
-# =========================================================
-
-def compress_context(results):
-
-    compressed = []
-
-    for result in results:
-
-        payload = result["payload"]
-
-        compressed.append(f'''
-
-Repository:
-{payload['repo_name']}
-
-File:
-{payload['file']}
-
-Type:
-{payload['type']}
-
-Name:
-{payload['name']}
-
-Code:
-{payload['content']}
-''')
-
-    return "\n".join(compressed)
-
-# =========================================================
-# MAIN RETRIEVAL PIPELINE
+# MAIN RETRIEVAL
 # =========================================================
 
 def retrieve(query):
@@ -316,21 +284,17 @@ def retrieve(query):
 
         initialize_bm25()
 
-    start_time = time.time()
-
-    print("\nRunning dense retrieval...\n")
+    filters = detect_query_filters(
+        query
+    )
 
     dense_results = dense_retrieval(
         query
     )
 
-    print("Running BM25 retrieval...\n")
-
     bm25_results = bm25_retrieval(
         query
     )
-
-    print("Running hybrid fusion...\n")
 
     hybrid_results = hybrid_fusion(
 
@@ -338,43 +302,16 @@ def retrieve(query):
         bm25_results
     )
 
-    print("Running reranking...\n")
+    filtered_results = apply_metadata_filters(
+
+        hybrid_results,
+        filters
+    )
 
     reranked_results = rerank_results(
 
         query,
-        hybrid_results,
-        top_k=TOP_K
+        filtered_results
     )
 
-    retrieval_time = (
-        time.time() - start_time
-    )
-
-    print(
-        f"\nRetrieval completed "
-        f"in {retrieval_time:.2f}s"
-    )
-
-    print("\nTOP RETRIEVED CHUNKS:\n")
-
-    for result in reranked_results:
-
-        payload = result["payload"]
-
-        print(
-
-            f"{payload['name']} "
-
-            f"({payload['type']}) "
-
-            f"-> Score: "
-
-            f"{result['score']:.4f}"
-        )
-
-    context = compress_context(
-        reranked_results
-    )
-
-    return context
+    return reranked_results

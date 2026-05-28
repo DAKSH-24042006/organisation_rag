@@ -504,6 +504,47 @@ def filter_results(
             score_bonus += 0.5
 
         # =================================================
+        # WORKFLOW BOOSTING
+        # =================================================
+
+        workflows = chunk.get(
+            "workflows",
+            []
+        )
+
+        query_lower = query_data[
+            "query"
+        ].lower()
+
+        if any(
+
+            word in query_lower
+
+            for word in [
+
+                "login",
+                "authentication",
+                "session",
+                "auth"
+            ]
+        ):
+
+            if any(
+
+                workflow in workflows
+
+                for workflow in [
+
+                    "login_flow",
+                    "session_restore",
+                    "auth_context"
+                ]
+            ):
+
+                score_bonus += 3
+
+                
+        # =================================================
         # FINAL SCORE
         # =================================================
 

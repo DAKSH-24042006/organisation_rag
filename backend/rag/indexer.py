@@ -10,6 +10,10 @@ from rag.semantic_analyzer import (
     analyze_code_semantics
 )
 
+from rag.llm_semantic_analyzer import (
+    llm_analyze_code_semantics
+)
+
 # =========================================================
 # qdrant
 # =========================================================
@@ -221,10 +225,21 @@ def create_chunk(
     # SEMANTIC ANALYSIS
     # =====================================================
 
-    semantic_data = analyze_code_semantics(
+    try:
 
-        content
-    )
+        semantic_data = (
+            llm_analyze_code_semantics(
+               content
+           )
+        )
+
+    except Exception:
+
+        semantic_data = (
+            analyze_code_semantics(
+                content
+            )
+        )
 
     # =====================================================
     # EMBEDDING TEXT
@@ -258,6 +273,20 @@ Semantic Tags:
 
 Summary:
 {semantic_data['summary']}
+
+Workflows:
+{' '.join(
+    semantic_data.get(
+        'workflows',
+        []
+    )
+)}
+
+Architecture Role:
+{semantic_data.get(
+    'architecture_role',
+    ''
+)}
 
 Dependencies:
 {' '.join(dependencies)}
@@ -323,20 +352,77 @@ Code:
         "summary":
         semantic_data["summary"],
 
-        "calls":
-        semantic_data["calls"],
+        "workflows":
+    semantic_data.get(
+       "workflows",
+       []
+    ),
 
-        "conditions":
-        semantic_data["conditions"],
+    "architecture_role":
+    semantic_data.get(
+        "architecture_role",
+    "general_component"
+    ),
 
-        "loops":
-        semantic_data["loops"],
+    "security_relevance":
+    semantic_data.get(
+        "security_relevance",
+        False
+    ),
 
-        "exceptions":
-        semantic_data["exceptions"],
+    "api_relevance":
+    semantic_data.get(
+        "api_relevance",
+        False
+    ),
 
-        "returns":
-        semantic_data["returns"],
+    "database_relevance":
+    semantic_data.get(
+        "database_relevance",
+        False
+    ),
+
+    "frontend":
+    semantic_data.get(
+        "frontend",
+        False
+    ),
+
+    "backend":
+    semantic_data.get(
+        "backend",
+        False
+    ),
+
+"calls":
+semantic_data.get(
+    "calls",
+    []
+),
+
+"conditions":
+semantic_data.get(
+    "conditions",
+    []
+),
+
+"loops":
+semantic_data.get(
+    "loops",
+    []
+),
+
+"exceptions":
+semantic_data.get(
+    "exceptions",
+    []
+),
+
+"returns":
+semantic_data.get(
+    "returns",
+    []
+),
 
         "search_text":
         (

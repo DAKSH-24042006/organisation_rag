@@ -31,12 +31,7 @@ from qdrant_client.models import (
 # =========================================================
 
 from rag.parser import (
-
-    extract_functions,
-    extract_classes,
-    extract_imports,
-    extract_dependencies,
-    extract_react_components
+    get_repository_symbols
 )
 
 # =========================================================
@@ -502,65 +497,80 @@ def process_code_file(
         )
 
         # =================================================
-        # IMPORTS
+        # UNIVERSAL TREE-SITTER SYMBOL EXTRACTION
         # =================================================
 
-        imports = extract_imports(
+        symbols = get_repository_symbols(
 
             source_code,
             extension
         )
 
-        # =================================================
-        # DEPENDENCIES
-        # =================================================
-
-        dependencies = extract_dependencies(
-
-            source_code,
-            extension
+        functions = symbols.get(
+            "functions",
+            []
         )
 
-        # =================================================
-        # REACT COMPONENTS
-        # =================================================
-
-        react_components = extract_react_components(
-
-            source_code,
-            extension
+        classes = symbols.get(
+            "classes",
+            []
         )
 
-        for component in react_components:
+        imports = [
 
-            create_chunk(
-
-                repo_metadata=repo_metadata,
-
-                language=language,
-
-                chunk_type="react_component",
-
-                name=component["name"],
-
-                file_path=file_path,
-
-                content=component["content"],
-
-                imports=imports,
-
-                dependencies=dependencies
+            symbol.get(
+                "name",
+                ""
             )
+
+            for symbol in symbols.get(
+                "imports",
+                []
+            )
+        ]
+
+        calls = [
+
+            symbol.get(
+                "name",
+                ""
+            )
+
+            for symbol in symbols.get(
+                "calls",
+                []
+            )
+        ]
+
+        dependencies = calls
+
+        print(
+            f"\n[DEBUG] {file_path}"
+        )
+
+        print(
+            f"[DEBUG] Functions: "
+            f"{len(functions)}"
+        )
+
+        print(
+            f"[DEBUG] Classes: "
+            f"{len(classes)}"
+        )
+
+        print(
+            f"[DEBUG] Imports: "
+            f"{len(imports)}"
+        )
+
+        print(
+            f"[DEBUG] Calls: "
+            f"{len(calls)}"
+        )
 
         # =================================================
         # FUNCTIONS
         # =================================================
-
-        functions = extract_functions(
-
-            source_code,
-            extension
-        )
 
         for func in functions:
 
@@ -572,11 +582,17 @@ def process_code_file(
 
                 chunk_type="semantic_function",
 
-                name=func["name"],
+                name=func.get(
+                    "name",
+                    "unknown_function"
+                ),
 
                 file_path=file_path,
 
-                content=func["content"],
+                content=func.get(
+                    "content",
+                    ""
+                ),
 
                 imports=imports,
 
@@ -586,12 +602,6 @@ def process_code_file(
         # =================================================
         # CLASSES
         # =================================================
-
-        classes = extract_classes(
-
-            source_code,
-            extension
-        )
 
         for cls in classes:
 
@@ -603,11 +613,17 @@ def process_code_file(
 
                 chunk_type="class",
 
-                name=cls["name"],
+                name=cls.get(
+                    "name",
+                    "unknown_class"
+                ),
 
                 file_path=file_path,
 
-                content=cls["content"],
+                content=cls.get(
+                    "content",
+                    ""
+                ),
 
                 imports=imports,
 
@@ -615,7 +631,7 @@ def process_code_file(
             )
 
         # =================================================
-        # FILE CHUNK FALLBACK
+        # FILE FALLBACK
         # =================================================
 
         if (
@@ -623,8 +639,7 @@ def process_code_file(
             len(functions) == 0
             and
             len(classes) == 0
-            and
-            len(react_components) == 0
+
         ):
 
             create_chunk(
@@ -657,6 +672,8 @@ def process_code_file(
         print(
             f"[ERROR] {file_path}: {e}"
         )
+
+ 
 
 # =========================================================
 # INDEX REPOSITORIES

@@ -1,98 +1,202 @@
 # =========================================================
-# workflow_engine.py
+# UNIVERSAL WORKFLOW ENGINE
 # =========================================================
+
+import json
 
 from collections import defaultdict
 
 # =========================================================
-# BUILD WORKFLOW CHAINS
+# LOAD KNOWLEDGE GRAPH
 # =========================================================
 
-def build_workflow_chains(chunks):
+with open(
+    "data/knowledge_graph.json",
+    "r",
+    encoding="utf-8"
+) as f:
 
-    workflows = defaultdict(list)
+    graph = json.load(f)
 
-    for chunk in chunks:
+# =========================================================
+# ADJACENCY
+# =========================================================
 
-        role = chunk.get(
-            "business_role",
-            "general_service"
+adjacency = defaultdict(list)
+
+for edge in graph["edges"]:
+
+    if edge["relation"] == "CALLS":
+
+        adjacency[
+            edge["source"]
+        ].append(
+
+            edge["target"]
         )
 
-        workflows[role].append({
+# =========================================================
+# ROOT DETECTION
+# =========================================================
 
-            "name":
-            chunk.get("name"),
+def find_roots():
 
-            "calls":
-            chunk.get("calls", []),
+    targets = set()
 
-            "summary":
-            chunk.get("summary"),
+    for edge in graph["edges"]:
 
-            "file":
-            chunk.get("file")
-        })
+        if edge["relation"] == "CALLS":
+
+            targets.add(
+                edge["target"]
+            )
+
+    roots = []
+
+    for node_id in graph["nodes"]:
+
+        if node_id not in targets:
+
+            roots.append(
+                node_id
+            )
+
+    return roots
+
+# =========================================================
+# DFS
+# =========================================================
+
+def dfs(
+
+    node,
+    path,
+    workflows
+
+):
+
+    path = path + [node]
+
+    children = adjacency.get(
+        node,
+        []
+    )
+
+    if len(children) == 0:
+
+        workflows.append(
+            path
+        )
+
+        return
+
+    for child in children:
+
+        dfs(
+
+            child,
+
+            path,
+
+            workflows
+        )
+
+# =========================================================
+# DISCOVER WORKFLOWS
+# =========================================================
+
+def discover_workflows():
+
+    workflows = []
+
+    roots = find_roots()
+
+    for root in roots:
+
+        dfs(
+
+            root,
+
+            [],
+
+            workflows
+        )
 
     return workflows
 
 # =========================================================
-# GET AUTH WORKFLOW
+# WORKFLOW METADATA
 # =========================================================
 
-def get_authentication_workflow(workflows):
+def workflow_to_metadata(
 
-    auth_flow = workflows.get(
-        "authentication_service",
-        []
-    )
+    workflow
 
-    return auth_flow
+):
+
+    components = []
+
+    for node in workflow:
+
+        metadata = graph[
+            "nodes"
+        ][node][
+            "metadata"
+        ]
+
+        components.append({
+
+            "name":
+            metadata.get(
+                "name"
+            ),
+
+            "file":
+            metadata.get(
+                "file"
+            ),
+
+            "summary":
+            metadata.get(
+                "summary"
+            ),
+
+            "business_role":
+            metadata.get(
+                "business_role"
+            )
+        })
+
+    return components
 
 # =========================================================
-# GET API WORKFLOW
+# BUILD CONTEXT
 # =========================================================
 
-def get_api_workflow(workflows):
+def build_workflow_context():
 
-    api_flow = workflows.get(
-        "api_service",
-        []
-    )
-
-    return api_flow
-
-# =========================================================
-# GET DATABASE WORKFLOW
-# =========================================================
-
-def get_database_workflow(workflows):
-
-    db_flow = workflows.get(
-        "database_service",
-        []
-    )
-
-    return db_flow
-
-# =========================================================
-# BUILD WORKFLOW CONTEXT
-# =========================================================
-
-def build_workflow_context(workflows):
+    workflows = discover_workflows()
 
     context = ""
 
-    for role, components in workflows.items():
+    for idx, workflow in enumerate(
+
+        workflows,
+        start=1
+
+    ):
 
         context += f"""
 
 ==================================================
-WORKFLOW:
-{role}
+WORKFLOW {idx}
 ==================================================
 
 """
+
+        components = workflow_to_metadata(
+            workflow
+        )
 
         for component in components:
 
@@ -104,52 +208,72 @@ NAME:
 FILE:
 {component['file']}
 
+ROLE:
+{component['business_role']}
+
 SUMMARY:
 {component['summary']}
-
-CALLS:
-{' '.join(component['calls'])}
 
 """
 
     return context
 
 # =========================================================
-# TEST
+# SAVE WORKFLOWS
+# =========================================================
+
+def save_workflows():
+
+    workflows = discover_workflows()
+
+    workflow_data = []
+
+    for workflow in workflows:
+
+        workflow_data.append(
+
+            workflow_to_metadata(
+                workflow
+            )
+        )
+
+    with open(
+
+        "data/workflows.json",
+
+        "w",
+
+        encoding="utf-8"
+
+    ) as f:
+
+        json.dump(
+
+            workflow_data,
+
+            f,
+
+            indent=2
+        )
+
+# =========================================================
+# MAIN
 # =========================================================
 
 if __name__ == "__main__":
 
-    sample_chunks = [
+    workflows = discover_workflows()
 
-        {
+    print(
 
-            "name":
-            "verify_token",
-
-            "business_role":
-            "authentication_service",
-
-            "calls":
-            [
-                "jwt.decode",
-                "redis.get"
-            ],
-
-            "summary":
-            "Verifies JWT token.",
-
-            "file":
-            "auth.py"
-        }
-    ]
-
-    workflows = build_workflow_chains(
-        sample_chunks
+        f"\nDiscovered "
+        f"{len(workflows)} "
+        f"workflows.\n"
     )
 
-    context = build_workflow_context(
-        workflows
-    )
+    save_workflows()
 
-    print(context)
+    print(
+
+        build_workflow_context()
+    )

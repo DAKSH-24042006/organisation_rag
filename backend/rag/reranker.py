@@ -1,102 +1,94 @@
 # =========================================================
-# reranker.py
+# CROSS ENCODER RERANKER
 # =========================================================
 
+from sentence_transformers import (
+    CrossEncoder
+)
+
 # =========================================================
-# RERANK RESULTS
+# MODEL
+# =========================================================
+
+print(
+    "\nLoading CrossEncoder reranker...\n"
+)
+
+reranker_model = CrossEncoder(
+    "cross-encoder/ms-marco-MiniLM-L-6-v2"
+)
+
+# =========================================================
+# BUILD CHUNK TEXT
+# =========================================================
+
+def build_chunk_text(chunk):
+
+    return f"""
+Name:
+{chunk.get('name', '')}
+
+Business Role:
+{chunk.get('business_role', '')}
+
+Semantic Tags:
+{' '.join(chunk.get('semantic_tags', []))}
+
+Summary:
+{chunk.get('summary', '')}
+
+Code:
+{chunk.get('content', '')[:2000]}
+"""
+
+# =========================================================
+# RERANK
 # =========================================================
 
 def rerank_results(
 
+    query,
     retrieved_chunks,
-    query_data
+    top_k=10
+
 ):
 
-    reranked = []
+    if len(retrieved_chunks) == 0:
 
-    query_tags = set(
+        return []
 
-        query_data.get(
-            "semantic_tags",
-            []
-        )
-    )
+    pairs = []
 
     for chunk in retrieved_chunks:
 
-        score = chunk.get(
-            "final_score",
-            0
+        chunk_text = build_chunk_text(
+            chunk
         )
 
-        # =================================================
-        # TAG OVERLAP BONUS
-        # =================================================
+        pairs.append(
 
-        chunk_tags = set(
-
-            chunk.get(
-                "semantic_tags",
-                []
+            (
+                query,
+                chunk_text
             )
         )
 
-        overlap = len(
+    scores = reranker_model.predict(
+        pairs
+    )
 
-            query_tags.intersection(
-                chunk_tags
-            )
-        )
+    reranked = []
 
-        score += overlap * 0.5
+    for chunk, score in zip(
 
-        # =================================================
-        # BUSINESS ROLE BONUS
-        # =================================================
+        retrieved_chunks,
+        scores
 
-        if (
+    ):
 
-            chunk.get(
-                "business_role"
-            )
-
-            in
-
-            query_data.get(
-                "business_roles",
-                []
-            )
-        ):
-
-            score += 1
-
-        # =================================================
-        # CALL COMPLEXITY BONUS
-        # =================================================
-
-        score += len(
-
-            chunk.get(
-                "calls",
-                []
-            )
-        ) * 0.05
-
-        # =================================================
-        # SUMMARY BONUS
-        # =================================================
-
-        summary = chunk.get(
-            "summary",
-            ""
-        ).lower()
-
-        for tag in query_tags:
-
-            if tag in summary:
-                score += 0.2
-
-        chunk["rerank_score"] = score
+        chunk[
+            "rerank_score"
+        ] = float(score)
 
         reranked.append(chunk)
 
@@ -111,4 +103,44 @@ def rerank_results(
         reverse=True
     )
 
-    return reranked
+    return reranked[:top_k]
+
+# =========================================================
+# TEST
+# =========================================================
+
+if __name__ == "__main__":
+
+    sample_query = (
+        "jwt authentication flow"
+    )
+
+    sample_chunks = [
+
+        {
+
+            "name":
+            "verify_token",
+
+            "summary":
+            "Validates JWT token.",
+
+            "semantic_tags":
+            [
+                "authentication",
+                "jwt"
+            ],
+
+            "content":
+            "def verify_token(): pass"
+        }
+    ]
+
+    results = rerank_results(
+
+        sample_query,
+
+        sample_chunks
+    )
+
+    print(results)

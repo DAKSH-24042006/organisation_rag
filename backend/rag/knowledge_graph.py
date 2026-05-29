@@ -1,12 +1,13 @@
 # =========================================================
-# knowledge_graph.py
+# UNIVERSAL KNOWLEDGE GRAPH
 # =========================================================
 
 import json
+
 from collections import defaultdict
 
 # =========================================================
-# LOAD METADATA
+# LOAD INDEX
 # =========================================================
 
 with open(
@@ -23,42 +24,130 @@ with open(
 
 knowledge_graph = {
 
-    "function_calls": defaultdict(list),
+    "nodes": {},
 
-    "file_dependencies": defaultdict(list),
+    "edges": [],
 
-    "business_roles": defaultdict(list),
-
-    "semantic_relationships": defaultdict(list)
+    "adjacency": defaultdict(list)
 }
 
 # =========================================================
-# BUILD FUNCTION CALL GRAPH
+# ADD NODE
 # =========================================================
 
-def build_function_call_graph():
+def add_node(
+
+    node_id,
+    node_type,
+    metadata
+
+):
+
+    if node_id not in knowledge_graph["nodes"]:
+
+        knowledge_graph[
+            "nodes"
+        ][node_id] = {
+
+            "type":
+            node_type,
+
+            "metadata":
+            metadata
+        }
+
+# =========================================================
+# ADD EDGE
+# =========================================================
+
+def add_edge(
+
+    source,
+    target,
+    relation
+
+):
+
+    edge = {
+
+        "source":
+        source,
+
+        "target":
+        target,
+
+        "relation":
+        relation
+    }
+
+    knowledge_graph[
+        "edges"
+    ].append(edge)
+
+    knowledge_graph[
+        "adjacency"
+    ][source].append(target)
+
+# =========================================================
+# NODE ID
+# =========================================================
+
+def build_node_id(
+
+    chunk
+
+):
+
+    return (
+
+        chunk["path"]
+        + "::"
+        + chunk["name"]
+    )
+
+# =========================================================
+# SYMBOL GRAPH
+# =========================================================
+
+def build_symbol_graph():
+
+    print(
+        "\nBuilding Symbol Graph..."
+    )
 
     for chunk in code_chunks:
 
-        source = chunk.get("name")
+        node_id = build_node_id(
+            chunk
+        )
 
-        calls = chunk.get("calls", [])
+        add_node(
 
-        for call in calls:
+            node_id,
 
-            knowledge_graph[
-                "function_calls"
-            ][source].append(call)
+            chunk.get(
+                "type",
+                "unknown"
+            ),
+
+            chunk
+        )
 
 # =========================================================
-# BUILD FILE DEPENDENCY GRAPH
+# IMPORT GRAPH
 # =========================================================
 
-def build_file_dependency_graph():
+def build_import_graph():
+
+    print(
+        "\nBuilding Import Graph..."
+    )
 
     for chunk in code_chunks:
 
-        file_name = chunk.get("file")
+        source = build_node_id(
+            chunk
+        )
 
         imports = chunk.get(
             "imports",
@@ -67,121 +156,294 @@ def build_file_dependency_graph():
 
         for imp in imports:
 
-            knowledge_graph[
-                "file_dependencies"
-            ][file_name].append(imp)
+            target = (
+                "import::"
+                + str(imp)
+            )
+
+            add_node(
+
+                target,
+
+                "IMPORT",
+
+                {}
+            )
+
+            add_edge(
+
+                source,
+
+                target,
+
+                "IMPORTS"
+            )
 
 # =========================================================
-# BUILD BUSINESS ROLE GRAPH
+# CALL GRAPH
 # =========================================================
 
-def build_business_role_graph():
+def build_call_graph():
+
+    print(
+        "\nBuilding Call Graph..."
+    )
+
+    lookup = {}
+
+    for chunk in code_chunks:
+
+        lookup[
+            chunk["name"]
+        ] = build_node_id(
+            chunk
+        )
+
+    for chunk in code_chunks:
+
+        source = build_node_id(
+            chunk
+        )
+
+        calls = chunk.get(
+            "calls",
+            []
+        )
+
+        for call in calls:
+
+            target = lookup.get(
+                call
+            )
+
+            if target:
+
+                add_edge(
+
+                    source,
+
+                    target,
+
+                    "CALLS"
+                )
+
+# =========================================================
+# FILE DEPENDENCY GRAPH
+# =========================================================
+
+def build_file_dependency_graph():
+
+    print(
+        "\nBuilding File Dependency Graph..."
+    )
+
+    file_nodes = {}
+
+    for chunk in code_chunks:
+
+        file_name = chunk["path"]
+
+        if file_name not in file_nodes:
+
+            file_nodes[
+                file_name
+            ] = (
+
+                "file::"
+                + file_name
+            )
+
+            add_node(
+
+                file_nodes[
+                    file_name
+                ],
+
+                "FILE",
+
+                {
+                    "path":
+                    file_name
+                }
+            )
+
+    for chunk in code_chunks:
+
+        symbol_node = build_node_id(
+            chunk
+        )
+
+        file_node = (
+
+            "file::"
+            + chunk["path"]
+        )
+
+        add_edge(
+
+            file_node,
+
+            symbol_node,
+
+            "CONTAINS"
+        )
+
+# =========================================================
+# BUSINESS GRAPH
+# =========================================================
+
+def build_business_graph():
+
+    print(
+        "\nBuilding Business Graph..."
+    )
 
     for chunk in code_chunks:
 
         role = chunk.get(
+
             "business_role",
+
             "general_service"
         )
 
-        knowledge_graph[
-            "business_roles"
-        ][role].append(
+        role_node = (
 
-            chunk.get("name")
+            "role::"
+            + role
+        )
+
+        add_node(
+
+            role_node,
+
+            "BUSINESS_ROLE",
+
+            {
+                "role":
+                role
+            }
+        )
+
+        symbol_node = build_node_id(
+            chunk
+        )
+
+        add_edge(
+
+            role_node,
+
+            symbol_node,
+
+            "OWNS"
         )
 
 # =========================================================
-# BUILD SEMANTIC RELATIONSHIPS
+# SEMANTIC GRAPH
 # =========================================================
 
-def build_semantic_relationships():
+def build_semantic_graph():
+
+    print(
+        "\nBuilding Semantic Graph..."
+    )
 
     for chunk in code_chunks:
 
-        source = chunk.get("name")
-
-        tags = chunk.get(
-            "semantic_tags",
-            []
+        source = build_node_id(
+            chunk
         )
 
-        for other_chunk in code_chunks:
+        tags = set(
 
-            if source == other_chunk.get("name"):
-                continue
-
-            other_tags = other_chunk.get(
+            chunk.get(
                 "semantic_tags",
                 []
             )
+        )
 
-            overlap = set(tags).intersection(
-                set(other_tags)
+        if len(tags) == 0:
+
+            continue
+
+        for other in code_chunks:
+
+            if chunk == other:
+
+                continue
+
+            overlap = tags.intersection(
+
+                set(
+
+                    other.get(
+                        "semantic_tags",
+                        []
+                    )
+                )
             )
 
-            if len(overlap) > 0:
+            if len(overlap) == 0:
 
-                knowledge_graph[
-                    "semantic_relationships"
-                ][source].append({
+                continue
 
-                    "target":
-                    other_chunk.get("name"),
+            target = build_node_id(
+                other
+            )
 
-                    "shared_tags":
-                    list(overlap)
-                })
+            add_edge(
+
+                source,
+
+                target,
+
+                "SEMANTICALLY_RELATED"
+            )
 
 # =========================================================
-# BUILD COMPLETE GRAPH
+# BUILD KNOWLEDGE GRAPH
 # =========================================================
 
 def build_knowledge_graph():
 
-    print("\nBuilding Knowledge Graph...\n")
+    print(
+        "\nBuilding Knowledge Graph...\n"
+    )
 
-    build_function_call_graph()
+    build_symbol_graph()
+
+    build_import_graph()
+
+    build_call_graph()
 
     build_file_dependency_graph()
 
-    build_business_role_graph()
+    build_business_graph()
 
-    build_semantic_relationships()
+    build_semantic_graph()
 
     print(
         "\nKnowledge Graph Built Successfully."
     )
 
 # =========================================================
-# GET RELATED FUNCTIONS
+# GET NEIGHBORS
 # =========================================================
 
-def get_related_functions(function_name):
+def get_neighbors(
+
+    node_id
+
+):
 
     return knowledge_graph[
-        "function_calls"
-    ].get(function_name, [])
+        "adjacency"
+    ].get(
 
-# =========================================================
-# GET RELATED SERVICES
-# =========================================================
+        node_id,
 
-def get_related_services(role):
-
-    return knowledge_graph[
-        "business_roles"
-    ].get(role, [])
-
-# =========================================================
-# GET SEMANTICALLY RELATED CHUNKS
-# =========================================================
-
-def get_semantic_relationships(name):
-
-    return knowledge_graph[
-        "semantic_relationships"
-    ].get(name, [])
+        []
+    )
 
 # =========================================================
 # SAVE GRAPH
@@ -203,9 +465,15 @@ def save_graph():
 
             {
 
-                k: dict(v)
+                "nodes":
+                knowledge_graph[
+                    "nodes"
+                ],
 
-                for k, v in knowledge_graph.items()
+                "edges":
+                knowledge_graph[
+                    "edges"
+                ]
             },
 
             f,
@@ -213,7 +481,9 @@ def save_graph():
             indent=2
         )
 
-    print("\nKnowledge Graph Saved.")
+    print(
+        "\nKnowledge Graph Saved."
+    )
 
 # =========================================================
 # MAIN
@@ -228,11 +498,13 @@ if __name__ == "__main__":
     print("\nGRAPH SUMMARY\n")
 
     print(
-        f"Function Nodes: "
-        f"{len(knowledge_graph['function_calls'])}"
+
+        f"Nodes: "
+        f"{len(knowledge_graph['nodes'])}"
     )
 
     print(
-        f"Dependency Nodes: "
-        f"{len(knowledge_graph['file_dependencies'])}"
+
+        f"Edges: "
+        f"{len(knowledge_graph['edges'])}"
     )

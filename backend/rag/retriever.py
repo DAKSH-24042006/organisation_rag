@@ -669,6 +669,19 @@ def retrieve_relevant_code(
         query_data
     )
 
+    from rag.reranker import (
+        rerank_results
+    )
+
+    filtered_results = rerank_results(
+
+        user_query,
+
+        filtered_results,
+
+        top_k=20
+    )
+
     print("\nBUILDING CONTEXT...\n")
 
     context = build_context(
@@ -677,13 +690,16 @@ def retrieve_relevant_code(
 
     return {
 
-        "query_data": query_data,
+        "query_data":
+        query_data,
 
         "retrieved_chunks":
         filtered_results,
 
-        "context": context
+        "context":
+        context
     }
+
 
 # =========================================================
 # TEST

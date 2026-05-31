@@ -1,0 +1,12 @@
+{
+  "total_chunks": 165,
+  "languages": {
+    "php": 48,
+    "javascript": 117
+  },
+  "chunk_types": {
+    "FILE": 42,
+    "FUNCTION": 99,
+    "REACT_COMPONENT": 24
+  }
+}

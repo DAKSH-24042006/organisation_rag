@@ -1,55 +1,38 @@
-from rag.indexer import (
+# =========================================================
+# Organization RAG Entry Point
+# =========================================================
 
-    index_repositories,
-    build_documents,
+from rag.indexer import (
+    scan_all_repositories,
+    print_statistics,
     generate_embeddings,
     store_vectors,
-    save_metadata
+    save_repository_index,
+    save_statistics
 )
 
-from rag.retriever import retrieve
-
 # =========================================================
-# INDEXING PIPELINE
+# MAIN
 # =========================================================
 
-print("\nStarting indexing pipeline...\n")
+def main():
 
-index_repositories()
+    print("\nStarting Organization RAG...\n")
 
-print("\nBuilding documents...\n")
+    scan_all_repositories()
 
-documents, bm25_corpus = build_documents()
+    print_statistics()
 
-embeddings = generate_embeddings(
-    documents
-)
+    embeddings = generate_embeddings()
 
-store_vectors(embeddings)
+    store_vectors(embeddings)
 
-save_metadata()
+    save_repository_index()
 
-print("\nIndexing completed successfully.\n")
+    save_statistics()
 
-# =========================================================
-# INTERACTIVE QUERY LOOP
-# =========================================================
+    print("\nOrganization RAG Build Complete.\n")
 
-while True:
 
-    query = input(
-        "\nAsk Question ('exit' to quit): "
-    )
-
-    if query.lower() == "exit":
-        break
-
-    context = retrieve(query)
-
-    print("\n" + "=" * 60)
-
-    print("RETRIEVED CONTEXT")
-
-    print("=" * 60)
-
-    print(context)
+if __name__ == "__main__":
+    main()

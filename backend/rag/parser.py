@@ -1,36 +1,65 @@
+from rag.symbol_extractors.extractor_router import (
+    get_extractor
+)
+
 # =========================================================
 # UNIVERSAL TREE-SITTER PARSER
 # =========================================================
 
 from tree_sitter_language_pack import get_parser
 
-from rag.symbol_extractor import extract_symbols
-from rag.call_graph import build_call_graph
+from rag.symbol_extractor import (
+    extract_symbols
+)
+
+from rag.call_graph import (
+    build_call_graph
+)
 
 # =========================================================
 # LANGUAGE MAP
 # =========================================================
 
 EXTENSION_TO_LANGUAGE = {
+
     ".py": "python",
+
     ".js": "javascript",
+
     ".jsx": "javascript",
+
     ".ts": "typescript",
+
     ".tsx": "tsx",
+
     ".java": "java",
+
     ".php": "php",
+
     ".go": "go",
+
     ".rs": "rust",
+
     ".c": "c",
+
     ".cpp": "cpp",
+
     ".cc": "cpp",
+
     ".cxx": "cpp",
+
     ".cs": "c_sharp",
+
     ".rb": "ruby",
+
     ".kt": "kotlin",
+
     ".swift": "swift",
+
     ".scala": "scala",
+
     ".lua": "lua",
+
     ".sh": "bash"
 }
 
@@ -45,7 +74,10 @@ _PARSER_CACHE = {}
 # =========================================================
 
 def get_language(extension):
-    return EXTENSION_TO_LANGUAGE.get(extension)
+
+    return EXTENSION_TO_LANGUAGE.get(
+        extension
+    )
 
 # =========================================================
 # GET PARSER
@@ -54,60 +86,114 @@ def get_language(extension):
 def get_cached_parser(language):
 
     if language not in _PARSER_CACHE:
-        _PARSER_CACHE[language] = get_parser(language)
 
-    return _PARSER_CACHE[language]
+        _PARSER_CACHE[
+            language
+        ] = get_parser(
+            language
+        )
+
+    return _PARSER_CACHE[
+        language
+    ]
 
 # =========================================================
 # PARSE CODE
 # =========================================================
 
-def parse_code(code, extension):
+def parse_code(
 
-    language = get_language(extension)
+    code,
+    extension
+
+):
+
+    language = get_language(
+        extension
+    )
 
     if language is None:
+
         return None
 
-    parser = get_cached_parser(language)
+    parser = get_cached_parser(
+        language
+    )
 
-    tree = parser.parse(code)
+    # ensure string
+    if not isinstance(
+        code,
+        str
+    ):
+
+        code = str(code)
+
+    print(
+        f"[PARSER] {language}"
+    )   
+
+    tree = parser.parse(
+        code
+    )
 
     return tree
 
 # =========================================================
-# EXTRACT SYMBOLS
+# SYMBOL EXTRACTION
 # =========================================================
 
-def get_repository_symbols(code, extension):
+def get_repository_symbols(
+
+    code,
+    extension
+
+):
 
     tree = parse_code(
+
         code,
         extension
     )
 
-    print(
-    f"\n[DEBUG TREE] {extension}"
-    )
-
-    print(
-        type(tree)
-    )
-
     if tree is None:
+
         return {
+
             "functions": [],
+
+            "react_components": [],
+
             "classes": [],
+
             "interfaces": [],
+
             "structs": [],
+
             "enums": [],
+
             "modules": [],
+
             "imports": [],
+
             "calls": [],
+
+            "variables": [],
+
+            "constants": [],
+
             "all_symbols": []
         }
 
-    return extract_symbols(
+    language = get_language(
+        extension
+    )
+
+    extractor = get_extractor(
+        language
+    )
+
+    return extractor.extract(
+
         tree,
         code
     )
@@ -116,166 +202,163 @@ def get_repository_symbols(code, extension):
 # CALL GRAPH
 # =========================================================
 
-def get_call_graph(code, extension):
+def get_call_graph(
+
+    code,
+    extension
+
+):
 
     symbols = get_repository_symbols(
+
         code,
         extension
     )
 
-    print("\n======================")
-    print("FILE:", file_path)
-    print("EXT:", extension)
-    print("SYMBOLS KEYS:", symbols.keys())
-    print("FUNCTIONS:", len(symbols.get("functions", [])))
-    print("CLASSES:", len(symbols.get("classes", [])))
-    print("IMPORTS:", len(symbols.get("imports", [])))
-    print("CALLS:", len(symbols.get("calls", [])))
-    print("======================\n")
-
-    return build_call_graph(symbols)
+    return build_call_graph(
+        symbols
+    )
 
 # =========================================================
 # FILE ANALYSIS
 # =========================================================
 
-def analyze_file(code, extension):
+def analyze_file(
+
+    code,
+    extension
+
+):
 
     symbols = get_repository_symbols(
+
         code,
         extension
     )
 
-    graph = build_call_graph(symbols)
+    graph = build_call_graph(
+        symbols
+    )
 
     return {
+
         "symbols": symbols,
+
         "call_graph": graph
     }
 
+
+
 # =========================================================
-# LEGACY FUNCTION API
+# HELPERS
 # =========================================================
 
-def extract_functions(code, extension):
+def extract_functions(
+
+    code,
+    extension
+
+):
 
     symbols = get_repository_symbols(
+
         code,
         extension
     )
 
-    functions = []
-
-    for symbol in symbols["functions"]:
-
-        functions.append({
-            "name": symbol["name"],
-            "content": symbol["content"],
-            "type": "function",
-            "id": symbol["id"],
-            "start_line": symbol["start_line"],
-            "end_line": symbol["end_line"]
-        })
-
-    return functions
+    return symbols[
+        "functions"
+    ]
 
 # =========================================================
-# LEGACY CLASS API
+# REACT COMPONENTS
 # =========================================================
 
-def extract_classes(code, extension):
+def extract_react_components(
+
+    code,
+    extension
+
+):
 
     symbols = get_repository_symbols(
+
         code,
         extension
     )
 
-    classes = []
+    return symbols.get(
 
-    for symbol in symbols["classes"]:
+        "react_components",
 
-        classes.append({
-            "name": symbol["name"],
-            "content": symbol["content"],
-            "type": "class",
-            "id": symbol["id"],
-            "start_line": symbol["start_line"],
-            "end_line": symbol["end_line"]
-        })
+        []
+    )
 
-    return classes
+# =========================================================
+# CLASSES
+# =========================================================
+
+def extract_classes(
+
+    code,
+    extension
+
+):
+
+    symbols = get_repository_symbols(
+
+        code,
+        extension
+    )
+
+    return symbols[
+        "classes"
+    ]
 
 # =========================================================
 # IMPORTS
 # =========================================================
 
-def extract_imports(code, extension):
+def extract_imports(
+
+    code,
+    extension
+
+):
 
     symbols = get_repository_symbols(
+
         code,
         extension
     )
 
-    return symbols["imports"]
+    return symbols[
+        "imports"
+    ]
 
 # =========================================================
 # DEPENDENCIES
 # =========================================================
 
-def extract_dependencies(code, extension):
+def extract_dependencies(
+
+    code,
+    extension
+
+):
 
     symbols = get_repository_symbols(
+
         code,
         extension
     )
 
     return [
+
         call["name"]
-        for call in symbols["calls"]
+
+        for call in symbols.get(
+            "calls",
+            []
+        )
     ]
-
-# =========================================================
-# REACT COMPONENT DETECTION
-# =========================================================
-
-def extract_react_components(code, extension):
-
-    components = []
-
-    if extension not in [
-        ".jsx",
-        ".tsx",
-        ".js",
-        ".ts"
-    ]:
-        return components
-
-    functions = extract_functions(
-        code,
-        extension
-    )
-
-    jsx_indicators = [
-        "<div",
-        "<span",
-        "<button",
-        "<form",
-        "<input",
-        "return ("
-    ]
-
-    for function in functions:
-
-        content = function["content"]
-
-        if any(
-            token in content
-            for token in jsx_indicators
-        ):
-            components.append({
-                "name": function["name"],
-                "content": content,
-                "id": function["id"]
-            })
-
-    return components

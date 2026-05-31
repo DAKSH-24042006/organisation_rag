@@ -6,7 +6,7 @@
 Converts language-specific Tree-Sitter node types into
 universal symbol categories.
 
-Example:
+Examples:
 
 Python:
     function_definition
@@ -14,15 +14,19 @@ Python:
 Java:
     method_declaration
 
-Go:
+JavaScript:
     function_declaration
 
-Rust:
-    function_item
+React:
+    arrow_function
 
 ALL become:
 
     FUNCTION
+
+React Components become:
+
+    REACT_COMPONENT
 """
 
 # =========================================================
@@ -31,81 +35,195 @@ ALL become:
 
 NODE_GROUPS = {
 
-    "FUNCTION": {
+    # =====================================================
+    # FUNCTIONS
+    # =====================================================
 
-        "function_definition",
-        "function_declaration",
-        "method_definition",
-        "method_declaration",
-        "function_item",
-        "constructor_declaration"
-    },
+"FUNCTION": {
+
+    # Python
+    "function_definition",
+
+    # Java
+    "method_declaration",
+    "constructor_declaration",
+
+    # JavaScript
+    "function_declaration",
+    "function_expression",
+
+    # Arrow functions
+    "arrow_function",
+
+    # TypeScript
+    "method_signature",
+
+    # Go
+    "function_declaration",
+
+    # Rust
+    "function_item",
+
+    # PHP
+    "function_definition",
+    "method_declaration",
+    "anonymous_function_creation_expression",
+
+    # C#
+    "local_function_statement"
+},
+
+    # =====================================================
+    # REACT COMPONENTS
+    # =====================================================
+
+    "REACT_COMPONENT": set(),
+
+    # =====================================================
+    # CLASSES
+    # =====================================================
 
     "CLASS": {
 
         "class_definition",
+
         "class_declaration",
+
+        "class",
+
         "class_body"
     },
 
+    # =====================================================
+    # INTERFACES
+    # =====================================================
+
     "INTERFACE": {
 
-        "interface_declaration"
+        "interface_declaration",
+
+        "interface_body"
     },
+
+    # =====================================================
+    # STRUCTS
+    # =====================================================
 
     "STRUCT": {
 
         "struct_item",
-        "struct_specifier"
+
+        "struct_specifier",
+
+        "struct_declaration"
     },
+
+    # =====================================================
+    # ENUMS
+    # =====================================================
 
     "ENUM": {
 
         "enum_declaration",
+
         "enum_specifier"
     },
+
+    # =====================================================
+    # MODULES
+    # =====================================================
 
     "MODULE": {
 
         "module",
-        "module_declaration",
-        "package_clause"
-    },
 
-    "NAMESPACE": {
+        "module_declaration",
+
+        "package_clause",
 
         "namespace_definition"
     },
 
+    # =====================================================
+    # IMPORTS
+    # =====================================================
+
     "IMPORT": {
 
+        # Python
         "import_statement",
         "import_from_statement",
-        "namespace_import",
+
+        # JS / TS
+        "import_clause",
+        "import_specifier",
+
+        # C#
         "using_directive",
-        "using_declaration"
+        "using_declaration",
+
+        # Others
+        "namespace_import"
     },
+
+    # =====================================================
+    # CALLS
+    # =====================================================
 
     "CALL": {
 
-        "call",
-        "call_expression",
-        "method_invocation",
-        "function_call"
-    },
+    # Generic
+    "call",
+    "call_expression",
+
+    # Java
+    "method_invocation",
+
+    # PHP
+    "function_call",
+
+    # Constructor calls
+    "new_expression",
+
+    # JS / TS
+    "member_expression",
+
+    # Python
+    "attribute",
+
+    # C / C++
+    "field_expression"
+},
+
+    # =====================================================
+    # VARIABLES
+    # =====================================================
 
     "VARIABLE": {
 
         "assignment",
+
         "variable_declarator",
-        "local_variable_declaration"
+
+        "local_variable_declaration",
+
+        "lexical_declaration"
     },
+
+    # =====================================================
+    # CONSTANTS
+    # =====================================================
 
     "CONSTANT": {
 
         "const_item",
+
         "constant_declaration"
     },
+
+    # =====================================================
+    # COMMENTS
+    # =====================================================
 
     "COMMENT": {
 
@@ -147,7 +265,7 @@ def is_symbol_node(node_type):
     ) != "OTHER"
 
 # =========================================================
-# CATEGORY HELPERS
+# HELPERS
 # =========================================================
 
 def is_function(node_type):
@@ -156,11 +274,20 @@ def is_function(node_type):
         node_type
     ) == "FUNCTION"
 
+
+def is_react_component(node_type):
+
+    return normalize_node_type(
+        node_type
+    ) == "REACT_COMPONENT"
+
+
 def is_class(node_type):
 
     return normalize_node_type(
         node_type
     ) == "CLASS"
+
 
 def is_import(node_type):
 
@@ -168,11 +295,13 @@ def is_import(node_type):
         node_type
     ) == "IMPORT"
 
+
 def is_call(node_type):
 
     return normalize_node_type(
         node_type
     ) == "CALL"
+
 
 def is_interface(node_type):
 
@@ -180,11 +309,13 @@ def is_interface(node_type):
         node_type
     ) == "INTERFACE"
 
+
 def is_struct(node_type):
 
     return normalize_node_type(
         node_type
     ) == "STRUCT"
+
 
 def is_module(node_type):
 
@@ -199,14 +330,24 @@ def is_module(node_type):
 SUPPORTED_SYMBOL_TYPES = [
 
     "FUNCTION",
+
+    "REACT_COMPONENT",
+
     "CLASS",
+
     "INTERFACE",
+
     "STRUCT",
+
     "ENUM",
+
     "MODULE",
-    "NAMESPACE",
+
     "IMPORT",
+
     "CALL",
+
     "VARIABLE",
+
     "CONSTANT"
 ]

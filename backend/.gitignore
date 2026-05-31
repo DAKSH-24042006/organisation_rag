@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environments
+venv/
+.venv/
+
+# Qdrant
+backend/data/qdrant_db/
+
+# Generated files
+backend/data/repository_index.json
+backend/data/index_stats.json
+
+# VS Code
+.vscode/
+
+# Logs
+*.log

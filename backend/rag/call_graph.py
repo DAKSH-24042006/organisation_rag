@@ -153,6 +153,8 @@ def build_call_graph(
 
             graph[
                 "adjacency"
+
+                
             ][
                 source_id
             ].append(

@@ -1,0 +1,10 @@
+def function_12_1():
+    return 1
+def function_12_2():
+    return 2
+def function_12_3():
+    return 3
+def function_12_4():
+    return 4
+def function_12_5():
+    return 5

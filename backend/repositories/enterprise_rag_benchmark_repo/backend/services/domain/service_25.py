@@ -1,0 +1,10 @@
+def function_25_1():
+    return 1
+def function_25_2():
+    return 2
+def function_25_3():
+    return 3
+def function_25_4():
+    return 4
+def function_25_5():
+    return 5

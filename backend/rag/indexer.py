@@ -259,6 +259,10 @@ def read_source_file(file_path):
 
         return None
 
+
+
+
+
 # =========================================================
 # BUILD EMBEDDING TEXT
 # =========================================================
@@ -342,6 +346,9 @@ Imports:
 {imports_text}
 
 Calls:
+{calls_text}
+
+Workflow Relationships:
 {calls_text}
 
 Code:

@@ -1,0 +1,10 @@
+def function_17_1():
+    return 1
+def function_17_2():
+    return 2
+def function_17_3():
+    return 3
+def function_17_4():
+    return 4
+def function_17_5():
+    return 5

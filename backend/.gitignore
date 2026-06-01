@@ -18,3 +18,4 @@ backend/data/index_stats.json
 
 # Logs
 *.log
+backend/repositories/

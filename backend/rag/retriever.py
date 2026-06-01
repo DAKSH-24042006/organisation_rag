@@ -184,6 +184,40 @@ def hybrid_merge(
 
     merged = {}
 
+    # ==========================================
+    # NORMALIZE VECTOR SCORES
+    # ==========================================
+
+    vector_scores = [
+        chunk.get(
+            "vector_score",
+            0
+        )
+        for chunk in vector_results
+    ]
+
+    v_min = min(vector_scores) if vector_scores else 0
+    v_max = max(vector_scores) if vector_scores else 1
+
+    # ==========================================
+    # NORMALIZE BM25 SCORES
+    # ==========================================
+
+    bm25_scores = [
+        chunk.get(
+            "bm25_score",
+            0
+        )
+        for chunk in bm25_results
+    ]
+
+    b_min = min(bm25_scores) if bm25_scores else 0
+    b_max = max(bm25_scores) if bm25_scores else 1
+
+    # ==========================================
+    # VECTOR RESULTS
+    # ==========================================
+
     for chunk in vector_results:
 
         key = (
@@ -192,11 +226,34 @@ def hybrid_merge(
             chunk["name"]
         )
 
+        score = chunk.get(
+            "vector_score",
+            0
+        )
+
+        if v_max > v_min:
+
+            score = (
+                score - v_min
+            ) / (
+                v_max - v_min
+            )
+
+        else:
+
+            score = 1.0
+
         merged[key] = chunk
 
-        merged[key]["hybrid_score"] = (
-            chunk["vector_score"] * 0.7
+        merged[key][
+            "hybrid_score"
+        ] = (
+            score * 0.6
         )
+
+    # ==========================================
+    # BM25 RESULTS
+    # ==========================================
 
     for chunk in bm25_results:
 
@@ -206,14 +263,35 @@ def hybrid_merge(
             chunk["name"]
         )
 
+        score = chunk.get(
+            "bm25_score",
+            0
+        )
+
+        if b_max > b_min:
+
+            score = (
+                score - b_min
+            ) / (
+                b_max - b_min
+            )
+
+        else:
+
+            score = 1.0
+
         if key not in merged:
 
             merged[key] = chunk
 
-            merged[key]["hybrid_score"] = 0
+            merged[key][
+                "hybrid_score"
+            ] = 0
 
-        merged[key]["hybrid_score"] += (
-            chunk["bm25_score"] * 0.3
+        merged[key][
+            "hybrid_score"
+        ] += (
+            score * 0.4
         )
 
     results = list(
@@ -221,11 +299,110 @@ def hybrid_merge(
     )
 
     results.sort(
-        key=lambda x: x["hybrid_score"],
+        key=lambda x: x[
+            "hybrid_score"
+        ],
         reverse=True
     )
 
     return results
+
+
+
+# =========================================================
+# CALL GRAPH EXPANSION
+# =========================================================
+
+def expand_call_graph(
+    chunks,
+    max_neighbors=10
+):
+
+    lookup = build_symbol_lookup()
+
+    IGNORE_SYMBOLS = {
+        "len",
+        "str",
+        "int",
+        "float",
+        "dict",
+        "list",
+        "set",
+        "tuple",
+        "print",
+        "Exception",
+        "ValueError",
+        "TypeError",
+        "RuntimeError",
+        "APIRouter",
+        "router"
+    }
+
+
+
+    expanded = []
+
+    seen = set()
+
+    for chunk in chunks:
+
+        key = (
+            chunk.get("path","")
+            +
+            chunk.get("name","")
+        )
+
+        if key not in seen:
+
+            expanded.append(chunk)
+            seen.add(key)
+
+        calls = chunk.get(
+            "calls",
+            []
+        )
+
+        for call in calls:
+
+            if call in IGNORE_SYMBOLS:
+                continue
+
+            if call not in lookup:
+                continue
+
+            neighbor = lookup[call]
+
+            nkey = (
+                neighbor.get("path","")
+                +
+                neighbor.get("name","")
+            )
+
+            if nkey in seen:
+                continue
+
+            neighbor=neighbor.copy()
+
+            neighbor["vector_score"] = (
+                chunk.get(
+                    "vector_score",
+                    0
+                ) * 0.95
+            )
+
+            expanded.append(
+                neighbor
+            )
+
+            seen.add(
+                nkey
+            )
+
+            if len(expanded) >= max_neighbors:
+                return expanded
+
+    return expanded
+
 
 # =========================================================
 # CONTEXT BUILDER
@@ -274,6 +451,33 @@ Code:
 
     return context
 
+
+
+# =========================================================
+# SYMBOL LOOKUP
+# =========================================================
+
+def build_symbol_lookup():
+
+    _ensure_initialized()
+
+    lookup = {}
+
+    for chunk in code_chunks:
+
+        name = chunk.get(
+            "name",
+            ""
+        )
+
+        if not name:
+            continue
+
+        lookup[name] = chunk
+
+    return lookup
+
+
 # =========================================================
 # RETRIEVE
 # =========================================================
@@ -300,9 +504,14 @@ def retrieve(
         bm25_results
     )
 
+    expanded = expand_call_graph(
+        merged[:3
+               ]
+    )
+
     reranked = rerank_results(
         query,
-        merged,
+        expanded,
         top_k=top_k
     )
 

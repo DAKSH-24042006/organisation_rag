@@ -1,0 +1,10 @@
+def function_16_1():
+    return 1
+def function_16_2():
+    return 2
+def function_16_3():
+    return 3
+def function_16_4():
+    return 4
+def function_16_5():
+    return 5

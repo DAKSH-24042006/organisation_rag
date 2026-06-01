@@ -17,7 +17,7 @@ REPOSITORIES = [
 
         "architecture": "microservices",
 
-        "path": r"C:\xampp\htdocs\employee_system"
+        "path": r"D:\orgatisation_rag\backend\repositories"
     }
 ]
 

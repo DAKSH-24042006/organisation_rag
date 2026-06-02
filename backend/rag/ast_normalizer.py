@@ -32,6 +32,11 @@ React Components become:
 # =========================================================
 # UNIVERSAL NODE GROUPS
 # =========================================================
+# basically it forms node groups where different languages from AST have functions but with different nomenclature
+# so to group it in on we use AST NORMALIZER
+# where we group all the similar ones under one name 
+# sets are used beacuse unordered and fast search
+
 
 NODE_GROUPS = {
 
@@ -268,6 +273,8 @@ def is_symbol_node(node_type):
 # HELPERS
 # =========================================================
 
+
+# checks the validity of the node
 def is_function(node_type):
 
     return normalize_node_type(

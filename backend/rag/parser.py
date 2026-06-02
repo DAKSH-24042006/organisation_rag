@@ -1,3 +1,4 @@
+# returns the correct language extractor
 from rag.symbol_extractors.extractor_router import (
     get_extractor
 )
@@ -6,12 +7,15 @@ from rag.symbol_extractors.extractor_router import (
 # UNIVERSAL TREE-SITTER PARSER
 # =========================================================
 
+# gets the tree setter
 from tree_sitter_language_pack import get_parser
 
+# after syntax tree formed extracts useful entities
 from rag.symbol_extractor import (
     extract_symbols
 )
 
+# helps in building relationships between functions
 from rag.call_graph import (
     build_call_graph
 )
@@ -20,6 +24,7 @@ from rag.call_graph import (
 # LANGUAGE MAP
 # =========================================================
 
+# detects programming language through the file extension
 EXTENSION_TO_LANGUAGE = {
 
     ".py": "python",
@@ -67,12 +72,15 @@ EXTENSION_TO_LANGUAGE = {
 # PARSER CACHE
 # =========================================================
 
+# basically stores the language parser 
+# so that u dont make again and again 
 _PARSER_CACHE = {}
 
 # =========================================================
 # GET LANGUAGE
 # =========================================================
 
+# returns the language
 def get_language(extension):
 
     return EXTENSION_TO_LANGUAGE.get(
@@ -83,6 +91,7 @@ def get_language(extension):
 # GET PARSER
 # =========================================================
 
+# if language not in cache the creates key for that lang and stores pareser object of that lang
 def get_cached_parser(language):
 
     if language not in _PARSER_CACHE:
@@ -108,19 +117,22 @@ def parse_code(
 
 ):
 
+    # get language
     language = get_language(
         extension
     )
 
+    # if not found none so that no crash
     if language is None:
 
         return None
 
+    # get the lang parser if exist reuse else make one 
     parser = get_cached_parser(
         language
     )
 
-    # ensure string
+    # ensure string if not convert
     if not isinstance(
         code,
         str
@@ -128,10 +140,12 @@ def parse_code(
 
         code = str(code)
 
+    # debug log prints which lang
     print(
         f"[PARSER] {language}"
     )   
 
+    # actual creation of the tree
     tree = parser.parse(
         code
     )
@@ -201,7 +215,7 @@ def get_repository_symbols(
 # =========================================================
 # CALL GRAPH
 # =========================================================
-
+# this is basically adding the symbols to the call graph
 def get_call_graph(
 
     code,
@@ -222,7 +236,7 @@ def get_call_graph(
 # =========================================================
 # FILE ANALYSIS
 # =========================================================
-
+# actual formation of call graph and the symbols
 def analyze_file(
 
     code,
@@ -249,6 +263,8 @@ def analyze_file(
 
 
 
+
+# next ones are helper functions technically we can do it without these
 # =========================================================
 # HELPERS
 # =========================================================

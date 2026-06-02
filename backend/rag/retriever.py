@@ -2,6 +2,10 @@
 # ORGANIZATION RAG RETRIEVER
 # =========================================================
 
+from rag.graph.graph_retriever import (
+    graph_expand
+)
+
 import json
 import numpy as np
 
@@ -504,10 +508,43 @@ def retrieve(
         bm25_results
     )
 
+    print("\n====================")
+    print("QUERY:", query)
+    print("====================")
+
+    print("\nHYBRID RESULTS")
+
+    for chunk in merged[:10]:
+
+        print(
+            chunk.get("name")
+        )
+
     expanded = expand_call_graph(
-        merged[:3
-               ]
+        merged[:10]
     )
+
+    print("\nCALL GRAPH EXPANSION")
+
+    for chunk in expanded:
+
+        print(
+            chunk.get("name")
+        )
+
+    expanded = graph_expand(
+            expanded
+    )
+
+    print("\nKNOWLEDGE GRAPH EXPANSION")
+
+    for chunk in expanded:
+
+       print(
+           chunk.get("name")
+       )
+
+       
 
     reranked = rerank_results(
         query,

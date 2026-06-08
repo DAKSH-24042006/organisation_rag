@@ -315,6 +315,12 @@ Chunk Type:
 Name:
 {chunk.get('name','')}
 
+Qualified Name:
+{chunk.get('qualified_name','')}
+
+Module:
+{chunk.get('module','')}
+
 Framework:
 {chunk.get('framework','')}
 
@@ -397,7 +403,9 @@ def process_code_file(
 
             source_code,
 
-            extension
+            extension,
+
+            file_path=file_path
         )
 
         # =====================================
@@ -755,6 +763,21 @@ def store_vectors(embeddings):
 
     "end_line":
     chunk["end_line"],
+
+    "qualified_name":
+    chunk.get(
+       "qualified_name"
+    ),
+
+    "module":
+    chunk.get(
+        "module"
+    ),
+
+    "repository_path":
+    chunk.get(
+        "repository_path"
+    ),
 
     # ====================================
     # FRAMEWORK METADATA

@@ -29,6 +29,8 @@ def build_knowledge_graph(
     ):
 
         node_id = symbol.get(
+            "qualified_name"
+        )or symbol.get(
             "name"
         )
 
@@ -131,7 +133,9 @@ def build_graph_from_chunks(
     for chunk in chunks:
 
         symbol_name = chunk.get(
-            "name"
+            "qualified_name"
+        )or chunk.get(
+           "name"
         )
 
         if not symbol_name:
@@ -175,7 +179,9 @@ def build_graph_from_chunks(
         )
 
         symbol_name = chunk.get(
-            "name"
+            "qualified_name"
+        )or chunk.get(
+           "name"
         )
 
         if (
@@ -200,44 +206,29 @@ def build_graph_from_chunks(
         )
 
     # =====================================================
-    # IMPORT NODES + IMPORT EDGES
+    # IMPORT EDGES
     # =====================================================
 
-    for chunk in chunks:
+    from rag.repository_import_graph import (
+        build_import_edges
+    )
 
-        file_path = chunk.get(
-            "path"
+    import_edges = build_import_edges(
+
+        chunks,
+
+        "backend/repositories/enterprise_rag_benchmark_repo"
+    )
+
+    for edge in import_edges:
+
+       graph.add_edge(
+
+            edge["source"],
+
+            edge["target"],
+
+            edge["relationship"]
         )
-
-        imports = chunk.get(
-            "imports",
-            []
-        )
-
-        if not file_path:
-
-            continue
-
-        for imported in imports:
-
-            if not imported:
-
-                continue
-
-            graph.add_node(
-
-                imported,
-
-                "IMPORT"
-            )
-
-            graph.add_edge(
-
-                file_path,
-
-                imported,
-
-                "IMPORTS"
-            )
 
     return graph

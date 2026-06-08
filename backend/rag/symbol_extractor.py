@@ -174,16 +174,251 @@ def generate_symbol_id(
         value.encode()
     ).hexdigest()
 
+
+
+# =========================================================
+# MODULE NAME
+# =========================================================
+
+def build_module_name(file_path):
+
+    if not file_path:
+        return ""
+
+    normalized = (
+       file_path
+      .replace("\\", "/")
+
+       .replace(".py", "")
+
+       .replace(".jsx", "")
+       .replace(".js", "")
+
+       .replace(".tsx", "")
+       .replace(".ts", "")
+
+       .replace(".java", "")
+       .replace(".php", "")
+       .replace(".cpp", "")
+      .replace(".c", "")
+       .replace(".h", "")
+)
+
+    parts = normalized.split("/")
+
+    if len(parts) > 1:
+        parts = parts[1:]
+
+    return ".".join(parts)
+
+
 # =========================================================
 # CREATE SYMBOL
 # =========================================================
+
+import re
+
+def extract_import_metadata(
+    node,
+    source_code
+):
+
+    start_byte = get_node_byte(
+        node,
+        "start"
+    )
+
+    end_byte = get_node_byte(
+        node,
+        "end"
+    )
+
+    text = source_code[
+        start_byte:end_byte
+    ].strip()
+
+    # ///////////////////////////////////////////////////
+
+    metadata = {
+
+        "import_module": None,
+
+        "imported_symbols": [],
+
+        "import_type": None
+    }
+
+    # =====================================================
+    # JAVASCRIPT / TYPESCRIPT
+    # =====================================================
+
+    js_match = re.match(
+
+        r"import\s+([A-Za-z0-9_]+)\s+from\s+['\"]([^'\"]+)['\"]",
+
+        text
+
+    )
+
+    if js_match:
+
+        metadata[
+            "import_module"
+        ] = js_match.group(2)
+
+        metadata[
+            "imported_symbols"
+        ] = [
+
+           js_match.group(1)
+
+        ]
+
+        metadata[
+            "import_type"
+        ] = "import"
+
+        return metadata
+
+
+    # =====================================================
+    # JAVA
+    # =====================================================
+
+    java_match = re.match(
+
+        r"import\s+([A-Za-z0-9_\.]+);",
+
+        text
+
+    )
+
+    if java_match:
+
+        metadata[
+            "import_module"
+        ] = java_match.group(1)
+
+        metadata[
+           "import_type"
+        ] = "import"
+
+        return metadata
+
+
+    # =====================================================
+    # C / C++
+    # =====================================================
+
+    cpp_match = re.match(
+
+        r'#include\s+[<"]([^>"]+)[>"]',
+
+       text
+
+    )
+
+    if cpp_match:
+
+        metadata[
+           "import_module"
+        ] = cpp_match.group(1)
+
+        metadata[
+           "import_type"
+        ] = "include"
+
+        return metadata
+
+
+    # =====================================================
+    # PHP
+    # =====================================================
+
+    php_match = re.match(
+
+        r'use\s+([A-Za-z0-9_\\\\]+);',
+
+        text
+
+    )
+
+    if php_match:
+
+        metadata[
+         "import_module"
+        ] = php_match.group(1)
+
+        metadata[
+           "import_type"
+        ] = "use"
+
+        return metadata
+
+
+    # =====================================================
+    # PYTHON
+    # =====================================================
+
+    match = re.match(
+       r"from\s+([A-Za-z0-9_\.]+)\s+import\s+(.+)",
+       text
+    )
+
+    if match:
+
+        metadata[
+           "import_module"
+       ] = match.group(1)
+
+        symbols = [
+
+           x.strip()
+
+           for x in match.group(
+              2
+           ).split(",")
+
+        ]
+
+        metadata[
+           "imported_symbols"
+        ] = symbols
+
+        metadata[
+        "import_type"
+        ] = "from_import"
+
+        return metadata
+
+
+    match = re.match(
+       r"import\s+([A-Za-z0-9_\.]+)",
+       text
+    )
+
+    if match:
+
+        metadata[
+           "import_module"
+        ] = match.group(1)
+
+        metadata[
+          "import_type"
+       ] = "import"
+
+        return metadata
+
+    return metadata
+
 
 def create_symbol(
 
     node,
     source_code,
     symbol_type,
-    parent_id=None
+    parent_id=None,
+    file_path=None
 
 ):
 
@@ -219,24 +454,54 @@ def create_symbol(
         start_line
     )
 
-    return {
+    module = build_module_name(
+       file_path
+    )
 
-        "id": symbol_id,
+    qualified_name = name
 
-        "name": name,
+    if module:
 
-        "symbol_type": symbol_type,
+       qualified_name = (
+           f"{module}.{name}"
+       )
 
-        "start_line": start_line,
+    symbol = {
 
-        "end_line": end_line,
+    "id": symbol_id,
 
-        "parent": parent_id,
+    "name": name,
 
-        "children": [],
+    "symbol_type": symbol_type,
 
-        "content": content
-    }
+    "start_line": start_line,
+
+    "end_line": end_line,
+
+    "parent": parent_id,
+
+    "children": [],
+
+    "content": content,
+
+    "repository_path": file_path,
+
+    "module": module,
+
+    "qualified_name": qualified_name
+    }  
+
+    if symbol_type == "IMPORT":
+
+        symbol.update(
+
+           extract_import_metadata(
+               node,
+                source_code
+            )
+        )
+
+    return symbol
 
 # =========================================================
 # EXTRACT SYMBOLS
@@ -245,7 +510,8 @@ def create_symbol(
 def extract_symbols(
 
     tree,
-    source_code
+    source_code,
+    file_path=None
 
 ):
 
@@ -325,7 +591,8 @@ def extract_symbols(
                 node=node,
                 source_code=source_code,
                 symbol_type=symbol_type,
-                parent_id=parent_id
+                parent_id=parent_id,
+                file_path=file_path
             )
 
             print(
@@ -476,13 +743,17 @@ def build_symbol_map(
 # BUILD FUNCTION MAP
 # =========================================================
 
+
 def build_function_map(
     symbols
 ):
 
     return {
 
-        symbol["name"]: symbol
+        symbol.get(
+            "qualified_name",
+            symbol["name"]
+        ): symbol
 
         for symbol in symbols[
             "functions"

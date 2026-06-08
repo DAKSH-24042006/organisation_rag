@@ -39,7 +39,11 @@ def build_repository_graph(
     )
 
     save_graph(
-        graph
+
+        graph,
+
+        "data/repository_graph.json"
+
     )
 
     return graph

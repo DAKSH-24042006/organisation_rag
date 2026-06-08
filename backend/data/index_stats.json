@@ -1,13 +1,14 @@
 {
-  "total_chunks": 286,
+  "total_chunks": 300,
   "languages": {
-    "python": 261,
+    "python": 272,
     "cpp": 3,
-    "javascript": 13,
+    "javascript": 16,
     "java": 9
   },
   "chunk_types": {
     "MODULE": 49,
+    "IMPORT": 14,
     "FUNCTION": 227,
     "REACT_COMPONENT": 4,
     "CLASS": 6

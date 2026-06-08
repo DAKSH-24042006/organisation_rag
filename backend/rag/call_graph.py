@@ -54,7 +54,10 @@ def build_call_graph(
 
     function_lookup = {
 
-        function["name"]: function
+        function.get(
+           "qualified_name",
+           function["name"]
+       ): function
 
         for function in functions
     }
@@ -74,6 +77,11 @@ def build_call_graph(
 
             "name":
             function["name"],
+
+            "qualified_name":
+            function.get(
+               "qualified_name"
+            ),
 
             "type":
             "FUNCTION",

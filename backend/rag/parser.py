@@ -159,7 +159,8 @@ def parse_code(
 def get_repository_symbols(
 
     code,
-    extension
+    extension,
+    file_path=None
 
 ):
 
@@ -209,7 +210,8 @@ def get_repository_symbols(
     return extractor.extract(
 
         tree,
-        code
+        code,
+        file_path=file_path
     )
 
 # =========================================================
@@ -219,14 +221,17 @@ def get_repository_symbols(
 def get_call_graph(
 
     code,
-    extension
+    extension,
+    file_path=None
 
 ):
 
     symbols = get_repository_symbols(
 
         code,
-        extension
+        extension,
+        file_path=file_path
+        
     )
 
     return build_call_graph(
@@ -240,14 +245,16 @@ def get_call_graph(
 def analyze_file(
 
     code,
-    extension
+    extension,
+    file_path=None
 
 ):
 
     symbols = get_repository_symbols(
 
         code,
-        extension
+        extension,
+        file_path=file_path
     )
 
     graph = build_call_graph(
@@ -272,14 +279,16 @@ def analyze_file(
 def extract_functions(
 
     code,
-    extension
+    extension,
+    file_path=None
 
 ):
 
     symbols = get_repository_symbols(
 
         code,
-        extension
+        extension,
+        file_path=file_path
     )
 
     return symbols[
@@ -293,14 +302,16 @@ def extract_functions(
 def extract_react_components(
 
     code,
-    extension
+    extension,
+    file_path=None
 
 ):
 
     symbols = get_repository_symbols(
 
         code,
-        extension
+        extension,
+        file_path=file_path
     )
 
     return symbols.get(
@@ -317,14 +328,16 @@ def extract_react_components(
 def extract_classes(
 
     code,
-    extension
+    extension,
+    file_path=None
 
 ):
 
     symbols = get_repository_symbols(
 
         code,
-        extension
+        extension,
+        file_path=file_path
     )
 
     return symbols[
@@ -338,14 +351,16 @@ def extract_classes(
 def extract_imports(
 
     code,
-    extension
+    extension,
+    file_path=None
 
 ):
 
     symbols = get_repository_symbols(
 
         code,
-        extension
+        extension,
+        file_path=file_path
     )
 
     return symbols[
@@ -359,14 +374,16 @@ def extract_imports(
 def extract_dependencies(
 
     code,
-    extension
+    extension,
+    file_path=None
 
 ):
 
     symbols = get_repository_symbols(
 
         code,
-        extension
+        extension,
+        file_path=file_path
     )
 
     return [

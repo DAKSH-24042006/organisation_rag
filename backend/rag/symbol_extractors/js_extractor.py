@@ -12,7 +12,8 @@ class JavaScriptExtractor(
     def extract(
         self,
         tree,
-        source_code
+        source_code,
+        file_path=None
     ):
 
         print(
@@ -21,7 +22,8 @@ class JavaScriptExtractor(
 
         symbols = super().extract(
             tree,
-            source_code
+            source_code,
+            file_path=file_path
         )
 
         print(

@@ -159,9 +159,8 @@ NODE_GROUPS = {
         "import_statement",
         "import_from_statement",
 
-        # JS / TS
-        "import_clause",
-        "import_specifier",
+        # JavaScript / TypeScript
+        "import_statement",
 
         # C#
         "using_directive",

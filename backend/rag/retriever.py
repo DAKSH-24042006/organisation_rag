@@ -2,8 +2,12 @@
 # ORGANIZATION RAG RETRIEVER
 # =========================================================
 
-from rag.graph.graph_retriever import (
-    graph_expand
+from rag.retrieval.graph_ranker import (
+    apply_graph_boost
+)
+
+from rag.retrieval.graph_chunk_expansion import (
+    expand_chunks
 )
 
 import json
@@ -77,6 +81,8 @@ def _ensure_initialized():
         {chunk.get("language","")}
         {chunk.get("file","")}
         {chunk.get("content","")}
+        {chunk.get("qualified_name","")}
+        {chunk.get("module","")}
         """
 
         bm25_corpus.append(
@@ -225,9 +231,16 @@ def hybrid_merge(
     for chunk in vector_results:
 
         key = (
-            chunk["path"]
-            +
-            chunk["name"]
+
+            chunk.get(
+              "qualified_name"
+            )
+            or
+            (
+                chunk["path"]
+                +
+                chunk["name"]
+            )
         )
 
         score = chunk.get(
@@ -262,9 +275,12 @@ def hybrid_merge(
     for chunk in bm25_results:
 
         key = (
-            chunk["path"]
-            +
-            chunk["name"]
+            chunk.get("qualified_name")
+            or
+           (
+               chunk["path"]
+                + chunk["name"]
+            )
         )
 
         score = chunk.get(
@@ -351,9 +367,16 @@ def expand_call_graph(
     for chunk in chunks:
 
         key = (
-            chunk.get("path","")
-            +
-            chunk.get("name","")
+            
+            chunk.get(
+                "qualified_name"
+            )
+            or
+            (
+                chunk.get("path","")
+                +
+                chunk.get("name","")
+            )
         )
 
         if key not in seen:
@@ -377,9 +400,15 @@ def expand_call_graph(
             neighbor = lookup[call]
 
             nkey = (
-                neighbor.get("path","")
-                +
-                neighbor.get("name","")
+                neighbor.get(
+                    "qualified_name"
+                )
+                or
+                (
+                    neighbor.get("path","")
+                    +
+                    neighbor.get("name","")
+                )
             )
 
             if nkey in seen:
@@ -470,12 +499,19 @@ def build_symbol_lookup():
     for chunk in code_chunks:
 
         name = chunk.get(
-            "name",
-            ""
+           "name",
+           ""
         )
 
-        if not name:
-            continue
+        qualified_name = chunk.get(
+           "qualified_name"
+        )
+
+        if qualified_name:
+           lookup[qualified_name] = chunk
+
+        if name not in lookup:
+           lookup[name] = chunk
 
         lookup[name] = chunk
 
@@ -508,6 +544,30 @@ def retrieve(
         bm25_results
     )
 
+    seed_nodes = set()
+
+    for chunk in merged[:10]:
+
+        qualified_name = chunk.get(
+            "qualified_name"
+        )
+
+        if not qualified_name:
+            continue
+
+        normalized = qualified_name.replace(
+            "orgatisation_rag.backend.",
+            ""
+        )
+
+        seed_nodes.add(
+            normalized
+        )
+
+
+
+
+
     print("\n====================")
     print("QUERY:", query)
     print("====================")
@@ -524,6 +584,43 @@ def retrieve(
         merged[:10]
     )
 
+    # =====================================
+    # GRAPH BOOSTING
+    # =====================================
+
+    expanded = apply_graph_boost(
+
+        expanded,
+
+        seed_nodes
+    )
+
+    
+
+
+    print()
+
+    print(
+        "GRAPH BOOSTED RESULTS"
+    )
+
+    for chunk in expanded[:10]:
+
+        print(
+
+            chunk.get(
+                "name"
+            ),
+
+            chunk.get(
+                "graph_score"
+            )
+        )
+
+
+
+
+
     print("\nCALL GRAPH EXPANSION")
 
     for chunk in expanded:
@@ -532,13 +629,13 @@ def retrieve(
             chunk.get("name")
         )
 
-    expanded = graph_expand(
-            expanded
+    expanded_chunks = expand_chunks(
+        expanded
     )
 
     print("\nKNOWLEDGE GRAPH EXPANSION")
 
-    for chunk in expanded:
+    for chunk in expanded_chunks:
 
        print(
            chunk.get("name")
@@ -548,7 +645,7 @@ def retrieve(
 
     reranked = rerank_results(
         query,
-        expanded,
+        expanded_chunks,
         top_k=top_k
     )
 

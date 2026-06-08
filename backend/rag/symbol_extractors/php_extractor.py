@@ -12,12 +12,14 @@ class PhpExtractor(
     def extract(
         self,
         tree,
-        source_code
+        source_code,
+        file_path=None
     ):
 
         symbols = super().extract(
             tree,
-            source_code
+            source_code,
+            file_path=file_path
         )
 
         self._detect_laravel_controllers(

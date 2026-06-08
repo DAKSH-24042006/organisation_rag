@@ -60,6 +60,21 @@ def create_chunk(
         "unknown"
     ),
 
+    "qualified_name":
+    symbol.get(
+        "qualified_name"
+    ),
+
+    "module":
+    symbol.get(
+       "module"
+    ),
+
+    "repository_path":
+    symbol.get(
+        "repository_path"
+    ),
+
     "file": os.path.basename(
         file_path
     ),
@@ -116,6 +131,28 @@ def create_chunk(
     "namespace":
     symbol.get(
         "namespace"
+    ),
+
+    "imports":
+    symbol.get(
+        "imports",
+       []
+    ),
+
+    "import_module":
+    symbol.get(
+        "import_module"
+    ),
+
+    "imported_symbols":
+    symbol.get(
+        "imported_symbols",
+        []
+    ),
+
+    "import_type":
+    symbol.get(
+        "import_type"
     ),
 
     "includes":
@@ -337,6 +374,15 @@ def generate_file_chunk(
         "type":
         "FILE",
 
+        "qualified_name":
+        file_path,
+
+        "module":
+        None,
+
+        "repository_path":
+        file_path,
+
         "name":
         os.path.basename(
             file_path
@@ -436,6 +482,20 @@ def generate_chunks(
         )
     )
 
+    chunks.extend(
+
+        generate_import_chunks(
+
+            symbols,
+
+           language,
+
+            file_path,
+
+            repo_name
+        )
+    )
+
     # =============================================
     # FALLBACK
     # =============================================
@@ -452,6 +512,49 @@ def generate_chunks(
 
                 file_path,
 
+                repo_name
+            )
+        )
+
+    return chunks
+
+
+# =========================================================
+# IMPORT CHUNKS
+# =========================================================
+
+def generate_import_chunks(
+
+    symbols,
+    language,
+    file_path,
+    repo_name
+
+):
+
+    chunks = []
+
+    for symbol in symbols.get(
+        "imports",
+        []
+    ):
+
+        chunks.append(
+
+            create_chunk(
+
+                chunk_type=
+                "IMPORT",
+
+                symbol=symbol,
+
+                language=
+                language,
+
+                file_path=
+                file_path,
+
+                repo_name=
                 repo_name
             )
         )

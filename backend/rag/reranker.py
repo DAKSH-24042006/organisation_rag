@@ -1,83 +1,41 @@
 # =========================================================
-# UNIVERSAL CODE RERANKER
+# V2 RERANKER MODULE
 # =========================================================
 
 from sentence_transformers import CrossEncoder
+from rag.config import RERANKER_MODEL_NAME
 
-print("\nLoading Code Reranker...\n")
+_RERANKER = None
 
-reranker_model = CrossEncoder(
-    "cross-encoder/ms-marco-MiniLM-L-6-v2"
-)
+def get_reranker_model():
+    """Lazily load and return the CrossEncoder reranker model."""
+    global _RERANKER
+    if _RERANKER is None:
+        print(f"\n[INFO] Loading Reranker Model '{RERANKER_MODEL_NAME}'...")
+        _RERANKER = CrossEncoder(RERANKER_MODEL_NAME)
+        print("[INFO] Reranker Model loaded successfully.\n")
+    return _RERANKER
 
-# =========================================================
-# BUILD CHUNK TEXT
-# =========================================================
-
-def build_chunk_text(chunk):
-
-    return f"""
-Repository:
-{chunk.get("repo_name","")}
-
-Language:
-{chunk.get("language","")}
-
-Type:
-{chunk.get("type","")}
-
-Name:
-{chunk.get("name","")}
-
-File:
-{chunk.get("file","")}
-
-Code:
-{chunk.get("content","")[:3000]}
-"""
-
-# =========================================================
-# RERANK
-# =========================================================
-
-def rerank_results(
-    query,
-    chunks,
-    top_k=10
-):
-
+def rerank_results(query: str, chunks: list, top_k: int = 10) -> list:
+    """Rerank candidates against the query using cross-encoder."""
     if not chunks:
         return []
-
+        
+    model = get_reranker_model()
     pairs = []
-
     for chunk in chunks:
-
-        pairs.append(
-            (
-                query,
-                build_chunk_text(chunk)
-            )
-        )
-
-    scores = reranker_model.predict(
-        pairs
-    )
-
+        # Build text description of chunk content
+        chunk_text = f"File: {chunk.get('file', '')} | Type: {chunk.get('type', '')} | Name: {chunk.get('name', '')}\nCode:\n{chunk.get('content', '')}"
+        pairs.append((query, chunk_text))
+        
+    scores = model.predict(pairs)
+    
     reranked = []
-
-    for chunk, score in zip(
-        chunks,
-        scores
-    ):
-
-        chunk["rerank_score"] = float(score)
-
-        reranked.append(chunk)
-
-    reranked.sort(
-        key=lambda x: x["rerank_score"],
-        reverse=True
-    )
-
+    for chunk, score in zip(chunks, scores):
+        updated_chunk = chunk.copy()
+        updated_chunk["rerank_score"] = float(score)
+        reranked.append(updated_chunk)
+        
+    # Sort descending
+    reranked.sort(key=lambda x: x["rerank_score"], reverse=True)
     return reranked[:top_k]

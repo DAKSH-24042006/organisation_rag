@@ -1,1091 +1,319 @@
 # =========================================================
-# STANDARD LIBRARIES
+# V2 REPOSITORY INDEXING ORCHESTRATOR (indexer.py)
 # =========================================================
 
 import os
 import json
-
-# =========================================================
-# QDRANT
-# =========================================================
-
+import numpy as np
 from qdrant_client import QdrantClient
-
-from qdrant_client.models import (
-    VectorParams,
-    Distance,
-    PointStruct
-)
-
-# =========================================================
-# PARSER
-# =========================================================
-
-from rag.parser import (
-    get_repository_symbols
-)
-
-# =========================================================
-# CHUNK GENERATOR
-# =========================================================
-
-from rag.chunk_generator import (
-    generate_chunks
-)
-
-# =========================================================
-# EMBEDDINGS
-# =========================================================
-
-from rag.embeddings import (
-    embedding_model
-)
-
-# =========================================================
-# CONFIG
-# =========================================================
+from qdrant_client.models import VectorParams, Distance, PointStruct
 
 from rag.config import (
-
     QDRANT_HOST,
-
     QDRANT_PORT,
-
     COLLECTION_NAME,
-
-    REPOSITORIES
+    REPOSITORIES,
+    INDEX_PATH,
+    GRAPH_PATH,
+    QDRANT_DB_PATH
 )
+from rag.parser import FileParser
+from rag.symbol_extractor import SymbolExtractor
+from rag.chunk_generator import ChunkGenerator
+from rag.graph_database import GraphDatabase
+from rag.embeddings import embed_texts
 
-# =========================================================
-# SUPPORTED LANGUAGES
-# =========================================================
-
-SUPPORTED_EXTENSIONS = {
-
-    ".py": "python",
-
-    ".js": "javascript",
-
-    ".jsx": "javascript",
-
-    ".ts": "typescript",
-
-    ".tsx": "typescript",
-
-    ".java": "java",
-
-    ".php": "php",
-
-    ".go": "go",
-
-    ".rs": "rust",
-
-    ".c": "c",
-
-    ".cpp": "cpp",
-
-    ".cc": "cpp",
-
-    ".cxx": "cpp",
-
-    ".cs": "c_sharp",
-
-    ".rb": "ruby",
-
-    ".kt": "kotlin",
-
-    ".swift": "swift",
-
-    ".scala": "scala",
-
-    ".lua": "lua",
-
-    ".sh": "bash"
+# Ignored directories for indexing
+IGNORED_DIRS = {
+    "node_modules", ".git", "__pycache__", "venv", ".venv",
+    "dist", "build", ".next", "coverage", "tmp", "logs", "output", "scratch"
 }
 
-# =========================================================
-# IGNORED DIRECTORIES
-# =========================================================
+# Supported file extension groups
+SUPPORTED_EXTENSIONS = {
+    # Tree-sitter languages
+    ".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".cpp", ".cc", ".cxx", ".c", ".h", ".php", ".go", ".rs",
+    # Configs
+    ".json", ".yaml", ".yml", ".env",
+    # Markup / Docs
+    ".md", ".rst", ".html",
+    # Flatfiles
+    ".sql", ".sh"
+}
 
-IGNORED_DIRECTORIES = [
+def scan_repository(repo_path: str, repo_name: str):
+    """Scans and parses a single repository, returning parsed files, symbols, and chunks."""
+    print(f"\n[INDEXER] Scanning repository '{repo_name}' at '{repo_path}'...")
+    if not os.path.exists(repo_path):
+        print(f"[ERROR] Repository path not found: {repo_path}")
+        return [], []
 
-    "node_modules",
+    files_corpus = []
+    
+    # 1. Walk directory and read all files
+    for root, dirs, files in os.walk(repo_path):
+        # Skip ignored folders in-place
+        dirs[:] = [d for d in dirs if d not in IGNORED_DIRS]
+        
+        for file in files:
+            name, ext = os.path.splitext(file)
+            ext = ext.lower()
+            
+            # Match Dockerfile / Makefile / .gitignore explicitly
+            is_special = file in {"Dockerfile", "Makefile", ".gitignore"}
+            if ext not in SUPPORTED_EXTENSIONS and not is_special:
+                continue
+                
+            full_path = os.path.join(root, file)
+            rel_path = os.path.relpath(full_path, repo_path).replace("\\", "/")
+            
+            try:
+                with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
+                    content = f.read()
+                files_corpus.append({
+                    "full_path": full_path,
+                    "rel_path": rel_path,
+                    "filename": file,
+                    "content": content
+                })
+            except Exception as e:
+                print(f"[WARNING] Failed to read file {full_path}: {e}")
+                
+    print(f"[INDEXER] Found {len(files_corpus)} source files.")
+    return files_corpus
 
-    ".git",
+def run_indexing_pipeline():
+    """Runs the V2 indexing, graph construction, and vector ingestion pipeline."""
+    print("\n" + "="*60)
+    print("STARTING V2 CODE RAG INDEXING PIPELINE")
+    print("="*60 + "\n")
+    
+    all_chunks = []
+    graph_db = GraphDatabase()
+    
+    # Track module mappings for Python/JS imports resolution
+    # maps: module_name -> relative_path (e.g. "src.api" -> "src/api.py")
+    module_registry = {}
+    
+    # Track symbols mappings for calls resolution
+    # maps: symbol_name -> node_id (e.g. "CameraManager" -> "src/camera_manager.py::CameraManager")
+    symbol_registry = {}
 
-    "__pycache__",
+    # 1. First Pass: Scan all repos and collect files
+    for repo in REPOSITORIES:
+        repo_name = repo["name"]
+        repo_path = repo["path"]
+        
+        if not os.path.exists(repo_path):
+            # Fallback path if configured absolute path is missing in environment
+            backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            fallback = os.path.join(backend_dir, "repositories", repo_name, repo_name)
+            if os.path.exists(fallback):
+                repo_path = fallback
+            else:
+                fallback_parent = os.path.join(backend_dir, "repositories", repo_name)
+                if os.path.exists(fallback_parent):
+                    repo_path = fallback_parent
+                    
+        repo_files = scan_repository(repo_path, repo_name)
+        
+        # Build module registry to resolve imports
+        for f in repo_files:
+            rel = f["rel_path"]
+            # e.g., "src/api.py" -> "src.api"
+            mod_name = os.path.splitext(rel)[0].replace("/", ".")
+            module_registry[mod_name] = rel
+            
+        # 2. Second Pass: Parse and extract symbols
+        parsed_files = []
+        for f in repo_files:
+            parse_result = FileParser.parse_file(f["full_path"], f["content"])
+            symbols = SymbolExtractor.extract_symbols(parse_result, f["rel_path"])
+            
+            parsed_files.append({
+                "file_info": f,
+                "parse_result": parse_result,
+                "symbols": symbols
+            })
+            
+            # Register defined class/function names for calls resolution
+            for s in symbols:
+                if s["symbol_type"] in {"CLASS", "FUNCTION"}:
+                    name = s["name"]
+                    qname = s["qualified_name"]
+                    node_id = s["id"]
+                    
+                    symbol_registry[name] = node_id
+                    symbol_registry[qname] = node_id
+                    
+        # 3. Third Pass: Build chunks and graph relationships
+        for pf in parsed_files:
+            finfo = pf["file_info"]
+            presult = pf["parse_result"]
+            symbols = pf["symbols"]
+            rel_path = finfo["rel_path"]
+            
+            # Add File Node
+            graph_db.add_node(
+                node_id=rel_path,
+                node_type="FILE",
+                name=finfo["filename"],
+                file_path=rel_path,
+                repo_name=repo_name
+            )
+            
+            # Add Symbol Nodes & CONTAINS Edges
+            for s in symbols:
+                stype = s["symbol_type"]
+                metadata = {k: v for k, v in s.items() if k not in {"id", "symbol_type", "name", "repository_path", "content"}}
+                graph_db.add_node(
+                    node_id=s["id"],
+                    node_type=stype,
+                    name=s["name"],
+                    file_path=rel_path,
+                    repo_name=repo_name,
+                    **metadata
+                )
+                # Draw containment from parent or file
+                parent_id = s.get("parent")
+                if parent_id:
+                    # In symbol_extractor parent_id is AST node id (needs to map to stable node id)
+                    # Let's map dynamically: if symbol has parent class, find it
+                    # We built qname with Class.method prefix, so we can split
+                    parts = s["qualified_name"].split(".")
+                    if len(parts) > 1:
+                        parent_qname = ".".join(parts[:-1])
+                        parent_node_id = f"{rel_path}::{parent_qname}"
+                        graph_db.add_edge(parent_node_id, s["id"], "contains")
+                else:
+                    graph_db.add_edge(rel_path, s["id"], "defines")
+                    
+            # Add IMPORTS Edges
+            # Walk AST for imports
+            if presult.get("type") == "CODE":
+                tree = presult.get("tree")
+                if tree:
+                    # Look at import statement symbols
+                    # Walk files manually or parse import strings
+                    pass
+            for s in symbols:
+                if s["symbol_type"] == "IMPORT":
+                    # If it imports a module, e.g. "src.api"
+                    imp_mod = s.get("import_module")
+                    if imp_mod and imp_mod in module_registry:
+                        target_file = module_registry[imp_mod]
+                        graph_db.add_edge(rel_path, target_file, "imports")
+                        
+            # Add CALLS Edges
+            # Walk calls
+            for s in symbols:
+                if s["symbol_type"] == "CALL":
+                    caller_id = s.get("parent")
+                    # Find which function node wraps this call line
+                    # We can resolve caller node id
+                    caller_node_id = None
+                    call_line = s["start_line"]
+                    for other in symbols:
+                        if other["symbol_type"] in {"FUNCTION", "CLASS"} and other["start_line"] <= call_line <= other["end_line"]:
+                            caller_node_id = other["id"]
+                            break
+                            
+                    call_name = s["name"]
+                    # Resolve callee node id using registry
+                    callee_node_id = symbol_registry.get(call_name)
+                    
+                    if caller_node_id and callee_node_id:
+                        graph_db.add_edge(caller_node_id, callee_node_id, "calls")
+                        
+            # Generate Chunks
+            chunks = ChunkGenerator.generate_chunks(
+                symbols=symbols,
+                file_path=finfo["full_path"],
+                relative_path=rel_path,
+                file_type=presult["type"],
+                raw_content=finfo["content"],
+                repo_name=repo_name
+            )
+            all_chunks.extend(chunks)
+            
+    print(f"[INDEXER] Generated {len(all_chunks)} semantic chunks.")
 
-    "venv",
-
-    ".venv",
-
-    "dist",
-
-    "build",
-
-    ".next",
-
-    "coverage",
-
-    ".idea",
-
-    ".vscode",
-
-    "target",
-
-    "bin",
-
-    "obj",
-
-    "out",
-
-    "vendor",
-
-    "tmp",
-
-    "logs"
-]
-
-# =========================================================
-# GLOBAL STORAGE
-# =========================================================
-
-code_chunks = []
-
-# =========================================================
-# VECTOR SIZE
-# =========================================================
-
-VECTOR_SIZE = len(
-
-    embedding_model.encode(
-
-        ["test"]
-
-    )[0]
-)
-
-# =========================================================
-# QDRANT CLIENT WITH FALLBACK
-# =========================================================
-
-try:
-    print(f"Connecting to Qdrant at {QDRANT_HOST}:{QDRANT_PORT}...")
-    client = QdrantClient(
-        host=QDRANT_HOST,
-        port=QDRANT_PORT,
-        timeout=5.0
-    )
-    # Check connection
-    client.get_collections()
-    print("Successfully connected to Qdrant server.")
-except Exception as e:
-    print(f"\n[WARNING] Could not connect to Qdrant at {QDRANT_HOST}:{QDRANT_PORT}: {e}")
-    print("Falling back to local disk-based Qdrant client at 'data/qdrant_db'...\n")
-    client = QdrantClient(path="data/qdrant_db")
-
-# =========================================================
-# COLLECTION
-# =========================================================
-
-try:
-    if client.collection_exists(collection_name=COLLECTION_NAME):
-        client.delete_collection(collection_name=COLLECTION_NAME)
-    client.create_collection(
-        collection_name=COLLECTION_NAME,
-        vectors_config=VectorParams(
-            size=VECTOR_SIZE,
-            distance=Distance.COSINE
-        )
-    )
-except Exception as e:
+    # 4. Save NetworkX Graph
+    graph_db.save_to_json(GRAPH_PATH)
+    
+    # 5. Save Repository Index Chunks
+    with open(INDEX_PATH, "w", encoding="utf-8") as f:
+        json.dump(all_chunks, f, indent=4)
+    print(f"[INDEXER] Saved chunks index to {INDEX_PATH}")
+    
+    # 6. Generate Embeddings & Ingest to Qdrant
+    if not all_chunks:
+        print("[WARNING] No chunks found to index. Exiting.")
+        return
+        
+    print(f"[INDEXER] Generating embeddings for {len(all_chunks)} chunks...")
+    texts_to_embed = [c["embedding_text"] for c in all_chunks]
+    embeddings = embed_texts(texts_to_embed)
+    
+    # Setup Qdrant
+    client = None
     try:
-        client.recreate_collection(
+        print(f"[INDEXER] Connecting to Qdrant at {QDRANT_HOST}:{QDRANT_PORT}...")
+        client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=5.0)
+        client.get_collections()
+    except Exception as e:
+        print(f"[WARNING] Could not connect to Qdrant server: {e}")
+        print("[WARNING] Falling back to local disk Qdrant storage...")
+        client = QdrantClient(path=QDRANT_DB_PATH)
+        
+    vector_size = len(embeddings[0])
+    
+    try:
+        # Recreate collection
+        if client.collection_exists(collection_name=COLLECTION_NAME):
+            client.delete_collection(collection_name=COLLECTION_NAME)
+        client.create_collection(
             collection_name=COLLECTION_NAME,
             vectors_config=VectorParams(
-                size=VECTOR_SIZE,
+                size=vector_size,
                 distance=Distance.COSINE
             )
         )
-    except Exception as inner_e:
-        print(f"[ERROR] Failed to recreate collection: {inner_e}")
-        raise inner_e
-
-print(
-    "\nQdrant collection ready.\n"
-)
-
-# =========================================================
-# DETECT LANGUAGE
-# =========================================================
-
-def detect_language(file_path):
-
-    _, extension = os.path.splitext(
-        file_path
-    )
-
-    return SUPPORTED_EXTENSIONS.get(
-        extension.lower()
-    )
-
-# =========================================================
-# READ FILE
-# =========================================================
-
-def read_source_file(file_path):
-
-    try:
-
-        with open(
-
-            file_path,
-
-            "r",
-
-            encoding="utf-8",
-
-            errors="ignore"
-
-        ) as f:
-
-            return f.read()
-
     except Exception as e:
-
-        print(
-            f"[ERROR] Failed reading {file_path}: {e}"
-        )
-
-        return None
-
-
-
-
-
-# =========================================================
-# BUILD EMBEDDING TEXT
-# =========================================================
-
-def build_embedding_text(chunk):
-
-    imports = chunk.get(
-        "imports",
-        []
-    )
-
-    calls = chunk.get(
-        "calls",
-        []
-    )
-
-    imports_text = " ".join(
-        imports
-    )
-
-    calls_text = " ".join(
-        calls
-    )
-
-    decorators_text = " ".join(
-        chunk.get(
-            "decorators",
-            []
-        )
-    )
-
-    hooks_text = " ".join(
-        chunk.get(
-            "hooks",
-            []
-        )
-    )
-
-    return f"""
-
-Repository:
-{chunk.get('repo_name','')}
-
-Language:
-{chunk.get('language','')}
-
-Chunk Type:
-{chunk.get('type','')}
-
-Name:
-{chunk.get('name','')}
-
-Qualified Name:
-{chunk.get('qualified_name','')}
-
-Module:
-{chunk.get('module','')}
-
-Framework:
-{chunk.get('framework','')}
-
-Component Type:
-{chunk.get('component_type','')}
-
-Service Type:
-{chunk.get('service_type','')}
-
-Route:
-{chunk.get('route','')}
-
-HTTP Method:
-{chunk.get('http_method','')}
-
-Namespace:
-{chunk.get('namespace','')}
-
-Async:
-{chunk.get('is_async', False)}
-
-Decorators:
-{decorators_text}
-
-Hooks:
-{hooks_text}
-
-Imports:
-{imports_text}
-
-Calls:
-{calls_text}
-
-Workflow Relationships:
-{calls_text}
-
-Code:
-{chunk.get('content','')}
-"""
-
-# =========================================================
-# PROCESS FILE
-# =========================================================
-
-def process_code_file(
-
-    file_path,
-
-    repo_name
-
-):
-
-    source_code = read_source_file(
-        file_path
-    )
-
-    if not source_code:
-
-        return
-
-    language = detect_language(
-        file_path
-    )
-
-    if language is None:
-
-        return
-
-    _, extension = os.path.splitext(
-        file_path
-    )
-
-    try:
-
-        # =====================================
-        # TREE SITTER
-        # =====================================
-
-        symbols = get_repository_symbols(
-
-            source_code,
-
-            extension,
-
-            file_path=file_path
-        )
-
-        # =====================================
-        # CHUNK GENERATOR
-        # =====================================
-
-        chunks = generate_chunks(
-
-            symbols=symbols,
-
-            source_code=source_code,
-
-            language=language,
-
-            file_path=file_path,
-
-            repo_name=repo_name
-        )
-
-        # =====================================
-        # ENRICH CHUNKS
-        # =====================================
-
-        imports = [
-
-            x.get("name", "")
-
-            for x in symbols.get(
-                "imports",
-                []
-            )
-        ]
-
-        calls = [
-
-            x.get("name", "")
-
-            for x in symbols.get(
-                "calls",
-                []
-            )
-        ]
-
-        for chunk in chunks:
-
-            chunk["imports"] = imports
-
-            chunk["calls"] = calls
-
-            chunk[
-                "embedding_text"
-            ] = build_embedding_text(
-                chunk
-            )
-
-            code_chunks.append(
-                chunk
-            )
-
-        print(
-
-            f"[OK] "
-
-            f"{language:<12}"
-
-            f"{len(chunks):>4} chunks "
-
-            f"{file_path}"
-        )
-
-    except Exception as e:
-
-        print(
-
-            f"[ERROR] "
-
-            f"{file_path}: "
-
-            f"{e}"
-        )
-
-
-# =========================================================
-# REPOSITORY SCANNER
-# =========================================================
-
-def scan_repository(
-
-    repo_path,
-
-    repo_name
-
-):
-
-    print(
-        f"\nIndexing: {repo_name}\n"
-    )
-
-    file_count = 0
-
-    for root, dirs, files in os.walk(
-        repo_path
-    ):
-
-        # =====================================
-        # SKIP USELESS DIRECTORIES
-        # =====================================
-
-        dirs[:] = [
-
-            d
-
-            for d in dirs
-
-            if d not in IGNORED_DIRECTORIES
-        ]
-
-        for file_name in files:
-
-            _, extension = os.path.splitext(
-                file_name
-            )
-
-            if (
-
-                extension.lower()
-
-                not in
-
-                SUPPORTED_EXTENSIONS
-
-            ):
-
-                continue
-
-            file_path = os.path.join(
-
-                root,
-
-                file_name
-            )
-
-            process_code_file(
-
-                file_path,
-
-                repo_name
-            )
-
-            file_count += 1
-
-    print(
-        f"\nProcessed {file_count} files\n"
-    )
-
-# =========================================================
-# SCAN ALL REPOSITORIES
-# =========================================================
-
-def scan_all_repositories():
-
-    print(
-        "\nScanning repositories...\n"
-    )
-
-    for repo in REPOSITORIES:
-
-        repo_name = repo.get(
-            "name",
-            "unknown_repo"
-        )
-
-        repo_path = repo.get(
-            "path"
-        )
-
-        if not repo_path:
-
-            continue
-
-        if not os.path.exists(
-            repo_path
-        ):
-            # Check fallback path in workspace repositories directory
-            local_fallback = os.path.join(os.path.dirname(os.path.dirname(__file__)), "repositories", repo_name)
-            if os.path.exists(local_fallback):
-                print(f"[INFO] Configured path '{repo_path}' not found. Falling back to local workspace directory: '{local_fallback}'")
-                repo_path = local_fallback
-            else:
-                print(
-
-                    f"[WARNING] "
-
-                    f"Repository not found: "
-
-                    f"{repo_path}"
-                )
-
-                continue
-
-        scan_repository(
-
-            repo_path,
-
-            repo_name
-        )
-
-# =========================================================
-# CHUNK STATISTICS
-# =========================================================
-
-def print_statistics():
-
-    print("\n")
-
-    print("=" * 60)
-
-    print(
-        "REPOSITORIES INDEXED"
-    )
-
-    print("=" * 60)
-
-    print(
-        f"\nTotal Chunks: "
-        f"{len(code_chunks)}"
-    )
-
-    chunk_types = {}
-
-    languages = {}
-
-    for chunk in code_chunks:
-
-        chunk_type = chunk.get(
-            "type",
-            "UNKNOWN"
-        )
-
-        language = chunk.get(
-            "language",
-            "UNKNOWN"
-        )
-
-        chunk_types[
-            chunk_type
-        ] = (
-
-            chunk_types.get(
-                chunk_type,
-                0
-            )
-            + 1
-        )
-
-        languages[
-            language
-        ] = (
-
-            languages.get(
-                language,
-                0
-            )
-            + 1
-        )
-
-    print(
-        "\nChunk Types:"
-    )
-
-    for key, value in sorted(
-
-        chunk_types.items()
-
-    ):
-
-        print(
-            f"  {key:<20} {value}"
-        )
-
-    print(
-        "\nLanguages:"
-    )
-
-    for key, value in sorted(
-
-        languages.items()
-
-    ):
-
-        print(
-            f"  {key:<20} {value}"
-        )
-
-
-# =========================================================
-def generate_embeddings():
-    print("\nGenerating embeddings...\n")
-    if len(code_chunks) == 0:
-        raise ValueError("No chunks generated.")
-    # Limit each embedding text to a maximum number of characters to avoid token overflow
-    MAX_CHARS = 2000
-    texts = [chunk["embedding_text"][:MAX_CHARS] for chunk in code_chunks]
-    embeddings = embedding_model.encode(
-        texts,
-        show_progress_bar=True,
-        convert_to_numpy=True,
-    )
-    return embeddings
-# =========================================================
-
-def store_vectors(embeddings):
-
-    print(
-        "\nUploading vectors...\n"
-    )
-
+        print(f"[ERROR] Qdrant collection creation failed: {e}")
+        raise e
+        
     points = []
-
-    for idx, (
-
-        chunk,
-        vector
-
-    ) in enumerate(
-
-        zip(
-            code_chunks,
-            embeddings
-        )
-    ):
-
+    for idx, (chunk, vector) in enumerate(zip(all_chunks, embeddings)):
+        # Payload properties
         payload = {
-
-    "repo_name":
-    chunk["repo_name"],
-
-    "language":
-    chunk["language"],
-
-    "type":
-    chunk["type"],
-
-    "name":
-    chunk["name"],
-
-    "file":
-    chunk["file"],
-
-    "path":
-    chunk["path"],
-
-    "start_line":
-    chunk["start_line"],
-
-    "end_line":
-    chunk["end_line"],
-
-    "qualified_name":
-    chunk.get(
-       "qualified_name"
-    ),
-
-    "module":
-    chunk.get(
-        "module"
-    ),
-
-    "repository_path":
-    chunk.get(
-        "repository_path"
-    ),
-
-    # ====================================
-    # FRAMEWORK METADATA
-    # ====================================
-
-    "framework":
-    chunk.get(
-        "framework"
-    ),
-
-    "component_type":
-    chunk.get(
-        "component_type"
-    ),
-
-    "service_type":
-    chunk.get(
-        "service_type"
-    ),
-
-    "route":
-    chunk.get(
-        "route"
-    ),
-
-    "http_method":
-    chunk.get(
-        "http_method"
-    ),
-
-    "decorators":
-    chunk.get(
-        "decorators",
-        []
-    ),
-
-    "annotations":
-    chunk.get(
-        "annotations",
-        []
-    ),
-
-    "hooks":
-    chunk.get(
-        "hooks",
-        []
-    ),
-
-    "namespace":
-    chunk.get(
-        "namespace"
-    ),
-
-    "includes":
-    chunk.get(
-        "includes",
-        []
-    ),
-
-    "stl_usage":
-    chunk.get(
-        "stl_usage",
-        []
-    ),
-
-    "is_async":
-    chunk.get(
-        "is_async",
-        False
-    ),
-
-    # ====================================
-    # EXISTING METADATA
-    # ====================================
-
-    "imports":
-    chunk.get(
-        "imports",
-        []
-    ),
-
-    "calls":
-    chunk.get(
-        "calls",
-        []
-    ),
-
-    "content":
-    chunk["content"]
-}
-
+            "id": chunk["id"],
+            "repo_name": chunk["repo_name"],
+            "type": chunk["type"],
+            "name": chunk["name"],
+            "qualified_name": chunk["qualified_name"],
+            "file": chunk["file"],
+            "path": chunk["path"],
+            "start_line": chunk["start_line"],
+            "end_line": chunk["end_line"],
+            "content": chunk["content"],
+            "embedding_text": chunk["embedding_text"]
+        }
         points.append(
-
             PointStruct(
-
                 id=idx,
-
-                vector=vector.tolist(),
-
+                vector=vector,
                 payload=payload
             )
         )
-
-    BATCH_SIZE = 100
-
-    for i in range(
-
-        0,
-
-        len(points),
-
-        BATCH_SIZE
-    ):
-
-        batch = points[
-            i:
-            i + BATCH_SIZE
-        ]
-
-        client.upsert(
-
-            collection_name=
-            COLLECTION_NAME,
-
-            points=batch
-        )
-
-    print(
-        "\nVectors uploaded.\n"
+        
+    print(f"[INDEXER] Ingesting {len(points)} vectors into collection '{COLLECTION_NAME}'...")
+    # Batch upload
+    client.upload_points(
+        collection_name=COLLECTION_NAME,
+        points=points
     )
-
-# =========================================================
-# SAVE CHUNKS
-# =========================================================
-
-def save_repository_index():
-
-    print(
-        "\nSaving metadata...\n"
-    )
-
-    os.makedirs(
-        "data",
-        exist_ok=True
-    )
-
-    save_chunks = []
-
-    for chunk in code_chunks:
-
-        save_chunk = dict(
-            chunk
-        )
-
-        if (
-            "embedding_text"
-            in
-            save_chunk
-        ):
-
-            del save_chunk[
-                "embedding_text"
-            ]
-
-        save_chunks.append(
-            save_chunk
-        )
-
-    with open(
-
-        "data/repository_index.json",
-
-        "w",
-
-        encoding="utf-8"
-
-    ) as f:
-
-        json.dump(
-
-            save_chunks,
-
-            f,
-
-            indent=2,
-
-            ensure_ascii=False
-        )
-
-    print(
-        "\nMetadata saved.\n"
-    )
-
-# =========================================================
-# SAVE SUMMARY
-# =========================================================
-
-def save_statistics():
-
-    stats = {
-
-        "total_chunks":
-        len(code_chunks),
-
-        "languages": {},
-
-        "chunk_types": {}
-    }
-
-    for chunk in code_chunks:
-
-        language = chunk[
-            "language"
-        ]
-
-        chunk_type = chunk[
-            "type"
-        ]
-
-        stats[
-            "languages"
-        ][language] = (
-
-            stats[
-                "languages"
-            ].get(
-                language,
-                0
-            )
-            + 1
-        )
-
-        stats[
-            "chunk_types"
-        ][chunk_type] = (
-
-            stats[
-                "chunk_types"
-            ].get(
-                chunk_type,
-                0
-            )
-            + 1
-        )
-
-    with open(
-
-        "data/index_stats.json",
-
-        "w",
-
-        encoding="utf-8"
-
-    ) as f:
-
-        json.dump(
-
-            stats,
-
-            f,
-
-            indent=2
-        )
-
-# =========================================================
-# MAIN
-# =========================================================
-
-if __name__ == "__main__":
-
-    print(
-        "\nStarting Organization RAG indexing...\n"
-    )
-
-    # ==========================================
-    # SCAN REPOSITORIES
-    # ==========================================
-
-    scan_all_repositories()
-
-    # ==========================================
-    # STATS
-    # ==========================================
-
-    print_statistics()
-
-    # ==========================================
-    # EMBEDDINGS
-    # ==========================================
-
-    embeddings = generate_embeddings()
-
-    # ==========================================
-    # QDRANT
-    # ==========================================
-
-    store_vectors(
-        embeddings
-    )
-
-    # ==========================================
-    # SAVE METADATA
-    # ==========================================
-
-    save_repository_index()
-
-    save_statistics()
-
-    print(
-        "\nINDEXING COMPLETE\n"
-    )
+    print("[INDEXER] Ingestion complete. Index is fully operational!")
+    print("\n" + "="*60)
+    print("V2 INDEXING PIPELINE FINISHED SUCCESSFULLY")
+    print("="*60 + "\n")

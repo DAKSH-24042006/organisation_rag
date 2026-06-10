@@ -1,16 +1,18 @@
 {
-  "total_chunks": 300,
+  "total_chunks": 82159,
   "languages": {
-    "python": 272,
-    "cpp": 3,
-    "javascript": 16,
-    "java": 9
+    "docs": 16,
+    "text": 1,
+    "config": 81963,
+    "python": 179
   },
   "chunk_types": {
-    "MODULE": 49,
-    "IMPORT": 14,
-    "FUNCTION": 227,
-    "REACT_COMPONENT": 4,
-    "CLASS": 6
+    "DOC_SECTION": 16,
+    "TEXT_SECTION": 1,
+    "CONFIG_KEY": 81963,
+    "FUNCTION": 68,
+    "MODULE": 11,
+    "IMPORT": 86,
+    "CLASS": 14
   }
 }

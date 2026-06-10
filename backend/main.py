@@ -1,38 +1,18 @@
 # =========================================================
-# Organization RAG Entry Point
+# Organization RAG Entry Point (V2)
 # =========================================================
 
-from rag.indexer import (
-    scan_all_repositories,
-    print_statistics,
-    generate_embeddings,
-    store_vectors,
-    save_repository_index,
-    save_statistics
-)
-
-# =========================================================
-# MAIN
-# =========================================================
+import sys
+from rag.indexer import run_indexing_pipeline
 
 def main():
-
-    print("\nStarting Organization RAG...\n")
-
-    scan_all_repositories()
-
-    print_statistics()
-
-    embeddings = generate_embeddings()
-
-    store_vectors(embeddings)
-
-    save_repository_index()
-
-    save_statistics()
-
-    print("\nOrganization RAG Build Complete.\n")
-
+    print("\nStarting Code RAG V2 Builder...\n")
+    try:
+        run_indexing_pipeline()
+        print("\nCode RAG V2 Build Complete Successfully.\n")
+    except Exception as e:
+        print(f"\n[CRITICAL ERROR] Index pipeline failed: {e}\n")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

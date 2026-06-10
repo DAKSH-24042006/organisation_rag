@@ -1,562 +1,117 @@
 # =========================================================
-# UNIVERSAL CHUNK GENERATOR
+# V2 CHUNK GENERATOR MODULE
 # =========================================================
-
-"""
-Converts extracted symbols into
-Organization-RAG chunks.
-
-Pipeline:
-
-AST
- ↓
-Symbols
- ↓
-Chunks
- ↓
-Embeddings
-"""
 
 import os
 
-# =========================================================
-# SAFE CONTENT
-# =========================================================
-
-def clean_content(
-    content,
-    max_chars=1000
-):
-
-    if not content:
-
-        return ""
-
-    return content[:max_chars]
-
-# =========================================================
-# BASE CHUNK
-# =========================================================
-
-def create_chunk(
-
-    *,
-    chunk_type,
-    symbol,
-    language,
-    file_path,
-    repo_name
-
-):
-
-    return {
-
-    "repo_name": repo_name,
-    "language": language,
-    "type": chunk_type,
-
-    "name": symbol.get(
-        "name",
-        "unknown"
-    ),
-
-    "qualified_name":
-    symbol.get(
-        "qualified_name"
-    ),
-
-    "module":
-    symbol.get(
-       "module"
-    ),
-
-    "repository_path":
-    symbol.get(
-        "repository_path"
-    ),
-
-    "file": os.path.basename(
-        file_path
-    ),
-
-    "path": file_path,
-
-    "start_line": symbol.get(
-        "start_line",
-        0
-    ),
-
-    "end_line": symbol.get(
-        "end_line",
-        0
-    ),
-
-    # ==========================
-    # FRAMEWORK METADATA
-    # ==========================
-
-    "framework":
-    symbol.get("framework"),
-
-    "component_type":
-    symbol.get("component_type"),
-
-    "service_type":
-    symbol.get("service_type"),
-
-    "route":
-    symbol.get("route"),
-
-    "http_method":
-    symbol.get("http_method"),
-
-    "decorators":
-    symbol.get(
-        "decorators",
-        []
-    ),
-
-    "annotations":
-    symbol.get(
-        "annotations",
-        []
-    ),
-
-    "hooks":
-    symbol.get(
-        "hooks",
-        []
-    ),
-
-    "namespace":
-    symbol.get(
-        "namespace"
-    ),
-
-    "imports":
-    symbol.get(
-        "imports",
-       []
-    ),
-
-    "import_module":
-    symbol.get(
-        "import_module"
-    ),
-
-    "imported_symbols":
-    symbol.get(
-        "imported_symbols",
-        []
-    ),
-
-    "import_type":
-    symbol.get(
-        "import_type"
-    ),
-
-    "includes":
-    symbol.get(
-        "includes",
-        []
-    ),
-
-    "stl_usage":
-    symbol.get(
-        "stl_usage",
-        []
-    ),
-
-    "is_async":
-    symbol.get(
-        "is_async",
-        False
-    ),
-
-    "content":
-    clean_content(
-        symbol.get(
-            "content",
-            ""
-        )
-    )
-}
-
-# =========================================================
-# FUNCTION CHUNKS
-# =========================================================
-
-def generate_function_chunks(
-
-    symbols,
-    language,
-    file_path,
-    repo_name
-
-):
-
-    chunks = []
-
-    for symbol in symbols.get(
-        "functions",
-        []
-    ):
-
-        chunks.append(
-
-            create_chunk(
-
-                chunk_type=
-                "FUNCTION",
-
-                symbol=symbol,
-
-                language=
-                language,
-
-                file_path=
-                file_path,
-
-                repo_name=
-                repo_name
-            )
-        )
-
-    return chunks
-
-# =========================================================
-# REACT COMPONENT CHUNKS
-# =========================================================
-
-def generate_react_chunks(
-
-    symbols,
-    language,
-    file_path,
-    repo_name
-
-):
-
-    chunks = []
-
-    for symbol in symbols.get(
-        "react_components",
-        []
-    ):
-
-        chunks.append(
-
-            create_chunk(
-
-                chunk_type=
-                "REACT_COMPONENT",
-
-                symbol=symbol,
-
-                language=
-                language,
-
-                file_path=
-                file_path,
-
-                repo_name=
-                repo_name
-            )
-        )
-
-    return chunks
-
-# =========================================================
-# CLASS CHUNKS
-# =========================================================
-
-def generate_class_chunks(
-
-    symbols,
-    language,
-    file_path,
-    repo_name
-
-):
-
-    chunks = []
-
-    for symbol in symbols.get(
-        "classes",
-        []
-    ):
-
-        chunks.append(
-
-            create_chunk(
-
-                chunk_type=
-                "CLASS",
-
-                symbol=symbol,
-
-                language=
-                language,
-
-                file_path=
-                file_path,
-
-                repo_name=
-                repo_name
-            )
-        )
-
-    return chunks
-
-# =========================================================
-# MODULE CHUNKS
-# =========================================================
-
-def generate_module_chunks(
-
-    symbols,
-    language,
-    file_path,
-    repo_name
-
-):
-
-    chunks = []
-
-    for symbol in symbols.get(
-        "modules",
-        []
-    ):
-
-        chunks.append(
-
-            create_chunk(
-
-                chunk_type=
-                "MODULE",
-
-                symbol=symbol,
-
-                language=
-                language,
-
-                file_path=
-                file_path,
-
-                repo_name=
-                repo_name
-            )
-        )
-
-    return chunks
-
-# =========================================================
-# FILE FALLBACK
-# =========================================================
-
-def generate_file_chunk(
-
-    source_code,
-    language,
-    file_path,
-    repo_name
-
-):
-
-    return {
-
-        "repo_name":
-        repo_name,
-
-        "language":
-        language,
-
-        "type":
-        "FILE",
-
-        "qualified_name":
-        file_path,
-
-        "module":
-        None,
-
-        "repository_path":
-        file_path,
-
-        "name":
-        os.path.basename(
-            file_path
-        ),
-
-        "file":
-        os.path.basename(
-            file_path
-        ),
-
-        "path":
-        file_path,
-
-        "start_line":
-        1,
-
-        "end_line":
-        source_code.count(
-            "\n"
-        ) + 1,
-
-        "content":
-        clean_content(
-            source_code
-        )
-    }
-
-# =========================================================
-# MAIN ENTRY
-# =========================================================
-
-def generate_chunks(
-
-    symbols,
-    source_code,
-    language,
-    file_path,
-    repo_name
-
-):
-
-    chunks = []
-
-    chunks.extend(
-
-        generate_function_chunks(
-
-            symbols,
-
-            language,
-
-            file_path,
-
-            repo_name
-        )
-    )
-
-    chunks.extend(
-
-        generate_react_chunks(
-
-            symbols,
-
-            language,
-
-            file_path,
-
-            repo_name
-        )
-    )
-
-    chunks.extend(
-
-        generate_class_chunks(
-
-            symbols,
-
-            language,
-
-            file_path,
-
-            repo_name
-        )
-    )
-
-    chunks.extend(
-
-        generate_module_chunks(
-
-            symbols,
-
-            language,
-
-            file_path,
-
-            repo_name
-        )
-    )
-
-    chunks.extend(
-
-        generate_import_chunks(
-
-            symbols,
-
-           language,
-
-            file_path,
-
-            repo_name
-        )
-    )
-
-    # =============================================
-    # FALLBACK
-    # =============================================
-
-    if len(chunks) == 0:
-
-        chunks.append(
-
-            generate_file_chunk(
-
-                source_code,
-
-                language,
-
-                file_path,
-
-                repo_name
-            )
-        )
-
-    return chunks
-
-
-# =========================================================
-# IMPORT CHUNKS
-# =========================================================
-
-def generate_import_chunks(
-
-    symbols,
-    language,
-    file_path,
-    repo_name
-
-):
-
-    chunks = []
-
-    for symbol in symbols.get(
-        "imports",
-        []
-    ):
-
-        chunks.append(
-
-            create_chunk(
-
-                chunk_type=
-                "IMPORT",
-
-                symbol=symbol,
-
-                language=
-                language,
-
-                file_path=
-                file_path,
-
-                repo_name=
-                repo_name
-            )
-        )
-
-    return chunks
+class ChunkGenerator:
+    """Groups parsed symbols and content into rich, non-trivial chunks."""
+    
+    @staticmethod
+    def generate_chunks(symbols: list, file_path: str, relative_path: str, file_type: str, raw_content: str, repo_name: str) -> list:
+        chunks = []
+        filename = os.path.basename(file_path)
+        
+        # 1. Full File Chunk (High-level Context)
+        # Always create a full file chunk so the file exists in the index
+        if raw_content.strip():
+            chunks.append({
+                "id": relative_path,  # stable ID for the file itself
+                "repo_name": repo_name,
+                "type": "FILE",
+                "name": filename,
+                "qualified_name": relative_path,
+                "file": filename,
+                "path": relative_path,
+                "start_line": 1,
+                "end_line": len(raw_content.splitlines()),
+                "content": raw_content[:4000],  # cap to prevent huge context,
+                "embedding_text": f"File: {relative_path}\nRepository: {repo_name}\nContent:\n{raw_content[:2000]}"
+            })
+            
+        # 2. Config Chunks (Grouped)
+        # Avoid creating 100s of tiny 20-character chunks. Group them by sections or file.
+        if file_type == "CONFIG":
+            config_lines = []
+            for s in symbols:
+                config_lines.append(f"{s['qualified_name']} = {s['content']}")
+                
+            if config_lines:
+                config_summary = "\n".join(config_lines)
+                chunks.append({
+                    "id": f"{relative_path}::CONFIG_SUMMARY",
+                    "repo_name": repo_name,
+                    "type": "CONFIG",
+                    "name": filename,
+                    "qualified_name": f"{relative_path}::CONFIG_SUMMARY",
+                    "file": filename,
+                    "path": relative_path,
+                    "start_line": 1,
+                    "end_line": len(raw_content.splitlines()) or 1,
+                    "content": raw_content,
+                    "embedding_text": f"Configuration File: {relative_path}\nSettings:\n{config_summary[:2000]}"
+                })
+            return chunks
+
+        # 3. Document / Markdown Chunks
+        if file_type == "DOCUMENTATION":
+            for s in symbols:
+                # Filter out extremely short headers without content
+                content = s.get("content", "").strip()
+                if len(content) < 30:
+                    continue
+                chunks.append({
+                    "id": s["id"],
+                    "repo_name": repo_name,
+                    "type": "DOCS",
+                    "name": s["name"],
+                    "qualified_name": s["qualified_name"],
+                    "file": filename,
+                    "path": relative_path,
+                    "start_line": s["start_line"],
+                    "end_line": s["end_line"],
+                    "content": content,
+                    "embedding_text": f"Documentation Section in '{relative_path}' -> {s['name']}\nContent:\n{content[:2000]}"
+                })
+            return chunks
+
+        # 4. Code & Database Symbols
+        for s in symbols:
+            stype = s["symbol_type"]
+            content = s.get("content", "").strip()
+            
+            # Avoid tiny, useless chunks (e.g. empty constructors, minor getters/imports/calls)
+            # Imports and calls are used to build the graph, but they shouldn't be individual vector chunks!
+            if stype in {"IMPORT", "CALL"}:
+                continue
+                
+            # Filter extremely short function definitions (e.g. pass, simple returns) to avoid clutter
+            if stype == "FUNCTION" and (len(content) < 80 or content.count("\n") < 2):
+                continue
+                
+            chunk_type = "SYMBOL"
+            if stype == "SQL_TABLE":
+                chunk_type = "DATABASE"
+            elif stype == "CLASS":
+                chunk_type = "SYMBOL"
+                
+            chunks.append({
+                "id": s["id"],
+                "repo_name": repo_name,
+                "type": chunk_type,
+                "name": s["name"],
+                "qualified_name": s["qualified_name"],
+                "file": filename,
+                "path": relative_path,
+                "start_line": s["start_line"],
+                "end_line": s["end_line"],
+                "content": content,
+                "framework": s.get("framework"),
+                "component_type": s.get("component_type"),
+                "http_method": s.get("http_method"),
+                "route": s.get("route"),
+                "is_async": s.get("is_async", False),
+                "embedding_text": f"Repository: {repo_name}\nFile: {relative_path}\nType: {stype} ({s.get('component_type', 'Code Entity')})\nName: {s['qualified_name']}\nCode:\n{content[:2000]}"
+            })
+            
+        return chunks

@@ -6,4 +6,4 @@ requests
 fastapi
 uvicorn
 tree-sitter
-tree-sitter-languages
+tree-sitter-language-pack

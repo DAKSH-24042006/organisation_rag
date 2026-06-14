@@ -46,7 +46,7 @@ def scan_repository(repo_path: str, repo_name: str):
     print(f"\n[INDEXER] Scanning repository '{repo_name}' at '{repo_path}'...")
     if not os.path.exists(repo_path):
         print(f"[ERROR] Repository path not found: {repo_path}")
-        return [], []
+        return []
 
     files_corpus = []
     
@@ -82,6 +82,112 @@ def scan_repository(repo_path: str, repo_name: str):
     print(f"[INDEXER] Found {len(files_corpus)} source files.")
     return files_corpus
 
+def compile_repository_map(graph_db, repo_name, repo_files) -> str:
+    """Auto-compiles a repository blueprint (tech stack, directory structure, APIs, database tables)."""
+    # 1. Tech Stack Detection
+    extensions = {}
+    total_files = len(repo_files)
+    frameworks = set()
+    
+    for f in repo_files:
+        _, ext = os.path.splitext(f["filename"])
+        ext = ext.lower()
+        if ext:
+            extensions[ext] = extensions.get(ext, 0) + 1
+            
+        # Detect frameworks by parsing keywords
+        content = f["content"]
+        if "FastAPI" in content or "fastapi" in content or "@app." in content:
+            frameworks.add("FastAPI")
+        if "React" in content or "useState" in content or "useEffect" in content:
+            frameworks.add("React")
+        if "NextResponse" in content:
+            frameworks.add("Next.js")
+        if "RetinaFace" in content or "retinaface" in content:
+            frameworks.add("RetinaFace")
+        if "YOLO" in content or "yolo" in content:
+            frameworks.add("YOLO (Object Detection)")
+        if "BaseModel" in content and "pydantic" in content:
+            frameworks.add("Pydantic")
+        if "sqlite" in content or "sqlite3" in content:
+            frameworks.add("SQLite")
+            
+    tech_stack_desc = []
+    if extensions:
+        sorted_exts = sorted(extensions.items(), key=lambda x: x[1], reverse=True)
+        tech_stack_desc.append("### Primary Languages & Extensions")
+        for ext, count in sorted_exts:
+            percentage = (count / total_files) * 100
+            tech_stack_desc.append(f"- **{ext}**: {count} files ({percentage:.1f}%)")
+            
+    if frameworks:
+        tech_stack_desc.append("\n### Detected Frameworks & Libraries")
+        for fw in sorted(frameworks):
+            tech_stack_desc.append(f"- **{fw}**")
+            
+    # 2. Directory Structure
+    dirs = set()
+    for f in repo_files:
+        parts = f["rel_path"].split("/")
+        if len(parts) > 1:
+            dirs.add(parts[0])
+            
+    dir_desc = ["### Project Layout"]
+    for d in sorted(dirs):
+        dir_desc.append(f"- **`{d}/`**: Component directory")
+        
+    # 3. API Routes
+    api_desc = ["### Exposed API Routes & Services"]
+    api_routes = []
+    for node_id, ndata in graph_db.g.nodes(data=True):
+        if ndata.get("repo_name") == repo_name and ndata.get("type") == "FUNCTION":
+            if ndata.get("component_type") == "API_ROUTE" or ndata.get("route"):
+                api_routes.append({
+                    "method": ndata.get("http_method", "GET"),
+                    "route": ndata.get("route"),
+                    "name": ndata.get("name"),
+                    "file": ndata.get("file_path")
+                })
+    if api_routes:
+        api_desc.append("| Method | Endpoint | Handler | File |")
+        api_desc.append("| :--- | :--- | :--- | :--- |")
+        for r in api_routes:
+            api_desc.append(f"| `{r['method']}` | `{r['route']}` | `{r['name']}` | `{r['file']}` |")
+    else:
+        api_desc.append("No explicit API routes parsed.")
+        
+    # 4. Database Tables
+    db_desc = ["### Database Schema Mapping"]
+    db_tables = []
+    for node_id, ndata in graph_db.g.nodes(data=True):
+        if ndata.get("repo_name") == repo_name and ndata.get("type") == "SQL_TABLE":
+            db_tables.append({
+                "name": ndata.get("name"),
+                "content": ndata.get("content", ""),
+                "file": ndata.get("file_path")
+            })
+    if db_tables:
+        for t in db_tables:
+            db_desc.append(f"#### Table: `{t['name']}` (Declared in `{t['file']}`)")
+            if t["content"]:
+                db_desc.append(f"```sql\n{t['content']}\n```")
+    else:
+        db_desc.append("No database table definitions parsed.")
+        
+    blueprint = [
+        f"# Repository Architecture Map: {repo_name}\n",
+        "## 🛠️ Technology Stack & Environment",
+        "\n".join(tech_stack_desc) + "\n",
+        "## 📂 Directory Layout & Modules",
+        "\n".join(dir_desc) + "\n",
+        "## 🌐 Service APIs & Routing",
+        "\n".join(api_desc) + "\n",
+        "## 🗄️ Storage & Database Entities",
+        "\n".join(db_desc)
+    ]
+    
+    return "\n".join(blueprint)
+
 def run_indexing_pipeline():
     """Runs the V2 indexing, graph construction, and vector ingestion pipeline."""
     print("\n" + "="*60)
@@ -98,7 +204,7 @@ def run_indexing_pipeline():
     # Track symbols mappings for calls resolution
     # maps: symbol_name -> node_id (e.g. "CameraManager" -> "src/camera_manager.py::CameraManager")
     symbol_registry = {}
-
+ 
     # 1. First Pass: Scan all repos and collect files
     for repo in REPOSITORIES:
         repo_name = repo["name"]
@@ -235,6 +341,41 @@ def run_indexing_pipeline():
                 repo_name=repo_name
             )
             all_chunks.extend(chunks)
+
+        # 4. Post-processing: Compile Repository Map
+        repo_map_content = compile_repository_map(graph_db, repo_name, repo_files)
+        map_node_id = f"repo_map::{repo_name}"
+        graph_db.add_node(
+            node_id=map_node_id,
+            node_type="DOC",
+            name=f"Repository Map - {repo_name}",
+            file_path="repo_map.md",
+            repo_name=repo_name,
+            content=repo_map_content
+        )
+        
+        # Connect map to README if README exists
+        readme_path = None
+        for f in repo_files:
+            if f["filename"].lower() == "readme.md":
+                readme_path = f["rel_path"]
+                break
+        if readme_path:
+            graph_db.add_edge(readme_path, map_node_id, "references")
+            
+        all_chunks.append({
+            "id": map_node_id,
+            "repo_name": repo_name,
+            "type": "DOCS",
+            "name": f"Repository Map - {repo_name}",
+            "qualified_name": map_node_id,
+            "file": "repo_map.md",
+            "path": "repo_map.md",
+            "start_line": 1,
+            "end_line": len(repo_map_content.splitlines()),
+            "content": repo_map_content,
+            "embedding_text": f"Global Repository Map and Architecture Blueprint for {repo_name}:\n{repo_map_content[:2000]}"
+        })
             
     print(f"[INDEXER] Generated {len(all_chunks)} semantic chunks.")
 
@@ -256,10 +397,9 @@ def run_indexing_pipeline():
     embeddings = embed_texts(texts_to_embed)
     
     # Setup Qdrant
-    client = None
     try:
         print(f"[INDEXER] Connecting to Qdrant at {QDRANT_HOST}:{QDRANT_PORT}...")
-        client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=5.0)
+        client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=5)
         client.get_collections()
     except Exception as e:
         print(f"[WARNING] Could not connect to Qdrant server: {e}")

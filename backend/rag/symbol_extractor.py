@@ -59,6 +59,11 @@ def extract_node_name(node, source_bytes: bytes) -> str:
     }
     
     node_type = get_node_type(node)
+    
+    # Do not enter statement blocks, parameters, or JSX elements when looking for a definition name
+    if node_type in {"statement_block", "block", "formal_parameters", "parameters", "compound_statement", "jsx_element"}:
+        return ""
+        
     if node_type in TARGET_TYPES:
         start_byte = get_node_byte(node, "start")
         end_byte = get_node_byte(node, "end")
@@ -79,6 +84,45 @@ def extract_node_name(node, source_bytes: bytes) -> str:
             if name:
                 return name
     return ""
+
+
+def get_anonymous_symbol_name(node, source_bytes: bytes) -> str:
+    """Resolves name of anonymous functions/classes assigned to variables or properties."""
+    parent = getattr(node, "parent", None)
+    if parent is not None:
+        parent_node = parent() if callable(parent) else parent
+        if parent_node:
+            p_kind = getattr(parent_node, "kind", None)
+            if p_kind is not None:
+                p_kind_val = p_kind() if callable(p_kind) else p_kind
+                
+                child_count = getattr(parent_node, "child_count", 0)
+                if callable(child_count):
+                    child_count = child_count()
+                    
+                if p_kind_val == "variable_declarator":
+                    for i in range(child_count):
+                        child = parent_node.child(i)
+                        if child:
+                            c_kind = child.kind() if callable(child.kind) else child.kind
+                            if c_kind in {"identifier", "property_identifier"}:
+                                start = child.start_byte() if callable(child.start_byte) else child.start_byte
+                                end = child.end_byte() if callable(child.end_byte) else child.end_byte
+                                return source_bytes[start:end].decode("utf-8", errors="ignore").strip()
+                elif p_kind_val == "assignment_expression":
+                    left = parent_node.child(0)
+                    if left:
+                        start = left.start_byte() if callable(left.start_byte) else left.start_byte
+                        end = left.end_byte() if callable(left.end_byte) else left.end_byte
+                        return source_bytes[start:end].decode("utf-8", errors="ignore").strip()
+                elif p_kind_val == "pair":
+                    key = parent_node.child(0)
+                    if key:
+                        start = key.start_byte() if callable(key.start_byte) else key.start_byte
+                        end = key.end_byte() if callable(key.end_byte) else key.end_byte
+                        return source_bytes[start:end].decode("utf-8", errors="ignore").strip()
+    return ""
+
 
 # Universal Node mapping logic
 NODE_GROUPS = {
@@ -173,6 +217,10 @@ class SymbolExtractor:
             
             if norm_type in {"CLASS", "FUNCTION", "IMPORT", "CALL"}:
                 name = extract_node_name(node, source_bytes)
+                
+                # Fallback for anonymous functions/classes assigned to variables or properties
+                if not name and node_type in {"arrow_function", "function_expression", "class_expression"}:
+                    name = get_anonymous_symbol_name(node, source_bytes)
                 
                 # Filter fake symbols or anonymous symbols
                 # Never generate class_0, function_1

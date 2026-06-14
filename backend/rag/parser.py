@@ -12,7 +12,7 @@ try:
     from tree_sitter_language_pack import get_parser as ts_get_parser
 except ImportError:
     try:
-        from tree_sitter_languages import get_parser as ts_get_parser
+        from tree_sitter_languages import get_parser as ts_get_parser  # type: ignore
     except ImportError:
         print("[WARNING] Could not import tree-sitter parser helper. Code parsing will be unavailable.")
         ts_get_parser = None
@@ -325,3 +325,25 @@ class FileParser:
         except Exception as e:
             print(f"[ERROR] Flatfile parsing failed for {file_path}: {e}")
             return FileParser._empty_result()
+
+
+def get_repository_symbols(source_code: str, file_extension: str) -> dict:
+    """
+    Backward-compatibility helper to parse a code string and extract symbols.
+    Used by test scripts and legacy components.
+    """
+    from rag.symbol_extractor import SymbolExtractor
+    
+    mock_path = f"temp_file{file_extension}"
+    parse_result = FileParser.parse_file(mock_path, source_code)
+    symbols = SymbolExtractor.extract_symbols(parse_result, mock_path)
+    
+    mapped_symbols = []
+    for s in symbols:
+        s_copy = s.copy()
+        # Map React components to REACT_COMPONENT for legacy compatibility
+        if s_copy.get("framework") == "React" and s_copy.get("component_type") == "COMPONENT":
+            s_copy["symbol_type"] = "REACT_COMPONENT"
+        mapped_symbols.append(s_copy)
+        
+    return {"all_symbols": mapped_symbols}

@@ -112,3 +112,33 @@ class GraphDatabase:
             stats["edge_relations"][relation] = stats["edge_relations"].get(relation, 0) + 1
             
         return stats
+
+    def impact_analysis(self, file_path: str) -> list:
+        """Analyzes the potential impact of changes to a file by tracing imports and callers recursively."""
+        impacted_files = set()
+        if file_path not in self.g:
+            return []
+            
+        # 1. Direct imports: Who imports this file?
+        for pred in self.g.predecessors(file_path):
+            edge_data = self.g.get_edge_data(pred, file_path)
+            if edge_data.get("relation") == "imports":
+                impacted_files.add(pred)
+                
+        # 2. Indirect calls: Who calls symbols defined in this file?
+        defined_symbols = []
+        for succ in self.g.successors(file_path):
+            edge_data = self.g.get_edge_data(file_path, succ)
+            if edge_data.get("relation") in {"defines", "contains"}:
+                defined_symbols.append(succ)
+                
+        for sym in defined_symbols:
+            if sym in self.g:
+                for pred in self.g.predecessors(sym):
+                    edge_data = self.g.get_edge_data(pred, sym)
+                    if edge_data.get("relation") == "calls":
+                        caller_file = self.g.nodes[pred].get("file_path")
+                        if caller_file and caller_file != file_path:
+                            impacted_files.add(caller_file)
+                            
+        return sorted(list(impacted_files))

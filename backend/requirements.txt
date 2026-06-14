@@ -7,3 +7,5 @@ fastapi
 uvicorn
 tree-sitter
 tree-sitter-language-pack
+ollama
+streamlit

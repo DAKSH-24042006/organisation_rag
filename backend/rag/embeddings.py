@@ -8,14 +8,25 @@ from rag.config import EMBEDDING_MODEL_NAME
 _MODEL = None
 
 def get_embedding_model():
-    """Lazily load and return the SentenceTransformer model."""
+    """Lazily load and return the SentenceTransformer model with GPU auto-detection."""
     global _MODEL
     if _MODEL is None:
-        print(f"\n[INFO] Loading Embedding Model '{EMBEDDING_MODEL_NAME}'...")
-        _MODEL = SentenceTransformer(EMBEDDING_MODEL_NAME)
-        # Standard context limit for all-MiniLM-L6-v2 is 256/512 tokens
-        _MODEL.max_seq_length = 512
-        print(f"[INFO] Embedding dimension: {_MODEL.get_embedding_dimension()}\n")
+        import torch
+        device = "cuda" if torch.cuda.is_available() else ("mps" if hasattr(torch.backends, "mps") and torch.backends.mps.is_available() else "cpu")
+        try:
+            print(f"\n[INFO] Loading Embedding Model '{EMBEDDING_MODEL_NAME}' on {device.upper()}...")
+            _MODEL = SentenceTransformer(EMBEDDING_MODEL_NAME, device=device)
+            _MODEL.max_seq_length = 512
+            print(f"[INFO] Embedding dimension: {_MODEL.get_embedding_dimension()}\n")
+        except Exception as e:
+            print(f"[ERROR] Failed to load embedding model online: {e}")
+            print("[INFO] Attempting to load embedding model from local cache (offline mode).")
+            try:
+                _MODEL = SentenceTransformer(EMBEDDING_MODEL_NAME, local_files_only=True, device=device)
+                _MODEL.max_seq_length = 512
+                print(f"[INFO] Embedding Model loaded from cache successfully. Dimension: {_MODEL.get_embedding_dimension()}\n")
+            except Exception as e2:
+                raise RuntimeError(f"Unable to load embedding model both online and offline: {e2}") from e2
     return _MODEL
 
 def embed_text(text: str):

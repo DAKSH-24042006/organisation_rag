@@ -8,12 +8,24 @@ from rag.config import RERANKER_MODEL_NAME
 _RERANKER = None
 
 def get_reranker_model():
-    """Lazily load and return the CrossEncoder reranker model."""
+    """Lazily load and return the CrossEncoder reranker model with GPU auto-detection."""
     global _RERANKER
     if _RERANKER is None:
-        print(f"\n[INFO] Loading Reranker Model '{RERANKER_MODEL_NAME}'...")
-        _RERANKER = CrossEncoder(RERANKER_MODEL_NAME)
-        print("[INFO] Reranker Model loaded successfully.\n")
+        import torch
+        device = "cuda" if torch.cuda.is_available() else ("mps" if hasattr(torch.backends, "mps") and torch.backends.mps.is_available() else "cpu")
+        try:
+            print(f"\n[INFO] Loading Reranker Model '{RERANKER_MODEL_NAME}' on {device.upper()}...")
+            _RERANKER = CrossEncoder(RERANKER_MODEL_NAME, device=device)
+            print("[INFO] Reranker Model loaded successfully.\n")
+        except Exception as e:
+            # Common issue: offline/no network, or HTTP client closed due to network problems
+            print(f"[ERROR] Failed to load reranker model online: {e}")
+            print("[INFO] Attempting to load model from local cache (offline mode).")
+            try:
+                _RERANKER = CrossEncoder(RERANKER_MODEL_NAME, local_files_only=True, device=device)
+                print("[INFO] Reranker Model loaded from cache successfully.\n")
+            except Exception as e2:
+                raise RuntimeError(f"Unable to load reranker model both online and offline: {e2}") from e2
     return _RERANKER
 
 def rerank_results(query: str, chunks: list, top_k: int = 10) -> list:

@@ -224,74 +224,75 @@ with tab_qa:
                     st.session_state.retrieved = False
                     
     if st.session_state.retrieved and st.session_state.retrieval_data:
-        st.divider()
-        
         results = st.session_state.retrieval_data.get("results", [])
         qtype = st.session_state.retrieval_data.get("query_type", "GENERAL")
         
-        # Display Intent Badge
+        # 1. AI Response Placeholder at the top
+        ai_response_placeholder = st.empty()
+        
+        # 2. Display Intent Badge
         st.markdown(f'Query Classification: <span class="intent-badge intent-{qtype}">{qtype} QUERY</span>', unsafe_allow_html=True)
         
-        # Retrieved Chunks Section
-        st.subheader("📂 Retrieved Chunks")
-        st.caption(f"Showing all {len(results)} chunks retrieved and ranked:")
-        for idx, chunk in enumerate(results, 1):
-            filename = chunk.get("file") or chunk.get("path") or "Unknown File"
-            stype = chunk.get("type", "Entity")
-            score = chunk.get("rerank_score") or chunk.get("rrf_score", 0.0)
-            chunk_content = chunk.get("content", "")
+        # 3. Collapsible Implementation Details (expanded by default if answer not yet generated)
+        is_expanded = (st.session_state.answer is None)
+        with st.expander("🔍 View Retrieval & Context Details (Implementation Details)", expanded=is_expanded):
+            # Metrics Section
+            st.subheader("📈 Metrics Dashboard")
+            num_chunks = len(results)
+            retrieved_files = sorted(list({c.get("path") for c in results if c.get("path")}))
+            num_files = len(retrieved_files)
+            context_size = len(st.session_state.context_str)
+            estimated_tokens = context_size // 4
             
-            chunk_title = filename
-            with st.expander(chunk_title):
-                st.write(f"Type: {stype}")
-                st.write(f"Score: {score:.4f}" if isinstance(score, float) else f"Score: {score}")
-                st.write(f"Length: {len(chunk_content)} chars")
-                st.code(chunk_content, language="python" if filename.endswith(".py") else "text")
+            ret_time = st.session_state.retrieval_time_ms
+            gen_time = st.session_state.generation_time_ms
+            tot_time = (ret_time + gen_time) if gen_time is not None else None
+            
+            m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+            with m_col1:
+                st.metric("Query Type", qtype)
+                st.metric("Estimated Tokens", f"{estimated_tokens}")
+            with m_col2:
+                st.metric("Retrieved Chunks", f"{num_chunks}")
+                st.metric("Retrieval Time", f"{ret_time:.1f} ms")
+            with m_col3:
+                st.metric("Retrieved Files", f"{num_files}")
+                st.metric("Generation Time", f"{gen_time:.1f} ms" if gen_time is not None else "N/A")
+            with m_col4:
+                st.metric("Context Size", f"{context_size} chars")
+                st.metric("Total Time", f"{tot_time:.1f} ms" if tot_time is not None else "N/A")
                 
-        # Retrieved Files Section
-        st.subheader("📁 Retrieved Files")
-        retrieved_files = sorted(list({c.get("path") for c in results if c.get("path")}))
-        if retrieved_files:
-            for f in retrieved_files:
-                st.markdown(f"- `{f}`")
-        else:
-            st.write("*No files retrieved.*")
+            st.divider()
             
-        # Repository Analysis Section
-        st.subheader("📊 Repository Analysis")
-        if repo_analysis:
-            md_summary = RepositoryAnalyzer.generate_markdown_summary(repo_analysis)
-            st.markdown(md_summary)
-        else:
-            st.warning("No repository analysis available. Run indexing first.")
+            # Retrieved Chunks Section
+            st.subheader("📂 Retrieved Chunks")
+            st.caption(f"Showing all {len(results)} chunks retrieved and ranked:")
+            for idx, chunk in enumerate(results, 1):
+                filename = chunk.get("file") or chunk.get("path") or "Unknown File"
+                stype = chunk.get("type", "Entity")
+                score = chunk.get("rerank_score") or chunk.get("rrf_score", 0.0)
+                chunk_content = chunk.get("content", "")
+                
+                chunk_title = f"{idx}. {filename} (Score: {score:.4f})"
+                with st.expander(chunk_title):
+                    st.write(f"Type: {stype}")
+                    st.write(f"Length: {len(chunk_content)} chars")
+                    st.code(chunk_content, language="python" if filename.endswith(".py") else "text")
+                    
+            st.divider()
             
-        # Metrics Section
-        st.subheader("📈 Metrics Dashboard")
-        num_chunks = len(results)
-        num_files = len(retrieved_files)
-        context_size = len(st.session_state.context_str)
-        estimated_tokens = context_size // 4
-        
-        ret_time = st.session_state.retrieval_time_ms
-        gen_time = st.session_state.generation_time_ms
-        tot_time = (ret_time + gen_time) if gen_time is not None else None
-        
-        m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-        with m_col1:
-            st.metric("Query Type", qtype)
-            st.metric("Estimated Tokens", f"{estimated_tokens}")
-        with m_col2:
-            st.metric("Retrieved Chunks", f"{num_chunks}")
-            st.metric("Retrieval Time", f"{ret_time:.1f} ms")
-        with m_col3:
-            st.metric("Retrieved Files", f"{num_files}")
-            st.metric("Generation Time", f"{gen_time:.1f} ms" if gen_time is not None else "N/A")
-        with m_col4:
-            st.metric("Context Size", f"{context_size} chars")
-            st.metric("Total Time", f"{tot_time:.1f} ms" if tot_time is not None else "N/A")
+            # Retrieved Files Section
+            st.subheader("📁 Retrieved Files")
+            if retrieved_files:
+                for f in retrieved_files:
+                    st.markdown(f"- `{f}`")
+            else:
+                st.write("*No files retrieved.*")
+                
+            st.divider()
             
-        # Context Inspection Panel
-        with st.expander("🔍 Assembled Context"):
+            # Context Inspection Panel
+            st.subheader("🔍 Assembled Context Summary")
             # Files Included
             st.markdown("**Files Included:**")
             files_included = sorted(list({r.get("path") for r in results if r.get("type") not in {"CONFIG", "DATABASE", "DOCS"} and r.get("path")}))
@@ -335,15 +336,33 @@ with tab_qa:
             else:
                 st.markdown("*None*")
                 
-            # Total context size and token estimate
-            st.markdown(f"**Total Context Size:** {context_size} characters")
-            st.markdown(f"**Token Estimate:** ~{estimated_tokens} tokens")
-            
-        # Step 3: Trigger Generation automatically after showing retrieved context if not in preview mode and not already generated
-        if not st.session_state.preview_mode and st.session_state.answer is None:
             st.divider()
+            
+            # Repository Analysis Section (Inside Details Expander)
+            st.subheader("📊 Repository Analysis Snapshot")
+            if repo_analysis:
+                md_summary = RepositoryAnalyzer.generate_markdown_summary(repo_analysis)
+                st.markdown(md_summary)
+            else:
+                st.warning("No repository analysis available. Run indexing first.")
+        
+        # 4. Render AI Response if it exists
+        if st.session_state.answer:
+            with ai_response_placeholder.container():
+                st.subheader("🤖 AI Response")
+                st.markdown(st.session_state.answer)
+                st.caption(f"⚡ Generation Latency: {st.session_state.generation_time_ms:.1f} ms | Retrieval Latency: {st.session_state.retrieval_time_ms:.1f} ms")
+                st.divider()
+        
+        # 5. Trigger Generation if not in preview mode and not already generated
+        if not st.session_state.preview_mode and st.session_state.answer is None:
             with st.spinner("LLM generating answer..."):
                 try:
+                    num_chunks = len(results)
+                    retrieved_files = sorted(list({c.get("path") for c in results if c.get("path")}))
+                    num_files = len(retrieved_files)
+                    context_size = len(st.session_state.context_str)
+                    
                     generation_start = time.perf_counter()
                     answer = generate_answer(query, st.session_state.context_str)
                     generation_end = time.perf_counter()
@@ -369,14 +388,6 @@ with tab_qa:
                     st.session_state.generation_time_ms = 0.0
                     st.error(f"Error generating answer: {e}")
                     st.exception(e)
-                    
-    if st.session_state.answer:
-        st.divider()
-        st.subheader("🤖 AI Response")
-        st.markdown(st.session_state.answer)
-        
-        st.subheader("⚡ Generation Metrics")
-        st.write(f"Generation Time: {st.session_state.generation_time_ms:.1f} ms")
 
 
 # =========================================================

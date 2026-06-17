@@ -13,6 +13,7 @@ from rag.config import (
     QDRANT_HOST,
     QDRANT_PORT,
     COLLECTION_NAME,
+    get_collection_name,
     TOP_K,
     RRF_K,
     INDEX_PATH,
@@ -171,24 +172,30 @@ def classify_query(query: str) -> str:
 # =========================================================
 
 def vector_search(query: str, top_k: int = 20) -> list:
-    """Search Qdrant using dense embeddings."""
+    """Search Qdrant using dense embeddings across all repository-specific collections."""
     _ensure_initialized()
     try:
         client = _get_qdrant_client()
         query_vector = embed_text(query)
         
-        results = client.query_points(
-            collection_name=COLLECTION_NAME,
-            query=query_vector,
-            limit=top_k
-        )
-        output = []
-        for point in results.points:
-            payload = point.payload
-            if payload is not None:
-                payload["vector_score"] = point.score
-                output.append(payload)
-        return output
+        all_results = []
+        for repo in REPOSITORIES:
+            coll_name = get_collection_name(repo["name"])
+            if client.collection_exists(collection_name=coll_name):
+                results = client.query_points(
+                    collection_name=coll_name,
+                    query=query_vector,
+                    limit=top_k
+                )
+                for point in results.points:
+                    payload = point.payload
+                    if payload is not None:
+                        payload["vector_score"] = point.score
+                        all_results.append(payload)
+                        
+        # Sort combined results by vector score and slice
+        all_results.sort(key=lambda x: x.get("vector_score", 0.0), reverse=True)
+        return all_results[:top_k]
     except Exception as e:
         print(f"[WARNING] Vector search failed: {e}")
         return []

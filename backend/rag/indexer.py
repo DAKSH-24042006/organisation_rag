@@ -12,6 +12,7 @@ from rag.config import (
     QDRANT_HOST,
     QDRANT_PORT,
     COLLECTION_NAME,
+    get_collection_name,
     REPOSITORIES,
     INDEX_PATH,
     GRAPH_PATH,
@@ -408,24 +409,14 @@ def run_indexing_pipeline():
         
     vector_size = len(embeddings[0])
     
-    try:
-        # Recreate collection
-        if client.collection_exists(collection_name=COLLECTION_NAME):
-            client.delete_collection(collection_name=COLLECTION_NAME)
-        client.create_collection(
-            collection_name=COLLECTION_NAME,
-            vectors_config=VectorParams(
-                size=vector_size,
-                distance=Distance.COSINE
-            )
-        )
-    except Exception as e:
-        print(f"[ERROR] Qdrant collection creation failed: {e}")
-        raise e
-        
-    points = []
+    # Group chunks/embeddings by repository-specific collection
+    collection_points = {}
     for idx, (chunk, vector) in enumerate(zip(all_chunks, embeddings)):
-        # Payload properties
+        repo_name = chunk["repo_name"]
+        coll_name = get_collection_name(repo_name)
+        if coll_name not in collection_points:
+            collection_points[coll_name] = []
+            
         payload = {
             "id": chunk["id"],
             "repo_name": chunk["repo_name"],
@@ -439,7 +430,7 @@ def run_indexing_pipeline():
             "content": chunk["content"],
             "embedding_text": chunk["embedding_text"]
         }
-        points.append(
+        collection_points[coll_name].append(
             PointStruct(
                 id=idx,
                 vector=vector,
@@ -447,12 +438,27 @@ def run_indexing_pipeline():
             )
         )
         
-    print(f"[INDEXER] Ingesting {len(points)} vectors into collection '{COLLECTION_NAME}'...")
-    # Batch upload
-    client.upload_points(
-        collection_name=COLLECTION_NAME,
-        points=points
-    )
+    for coll_name, points in collection_points.items():
+        try:
+            print(f"[INDEXER] Recreating collection '{coll_name}'...")
+            if client.collection_exists(collection_name=coll_name):
+                client.delete_collection(collection_name=coll_name)
+            client.create_collection(
+                collection_name=coll_name,
+                vectors_config=VectorParams(
+                    size=vector_size,
+                    distance=Distance.COSINE
+                )
+            )
+            print(f"[INDEXER] Ingesting {len(points)} vectors into collection '{coll_name}'...")
+            client.upload_points(
+                collection_name=coll_name,
+                points=points
+            )
+        except Exception as e:
+            print(f"[ERROR] Failed to upload points for collection '{coll_name}': {e}")
+            raise e
+            
     print("[INDEXER] Ingestion complete. Index is fully operational!")
     print("\n" + "="*60)
     print("V2 INDEXING PIPELINE FINISHED SUCCESSFULLY")

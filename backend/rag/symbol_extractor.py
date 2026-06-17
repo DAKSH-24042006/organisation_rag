@@ -43,7 +43,7 @@ def get_node_byte(node, boundary="start") -> int:
     """Safely get start or end byte offset."""
     b = getattr(node, f"{boundary}_byte", None)
     if b is not None:
-        return b() if callable(b) else b
+        return b() if callable(b) else b  # type: ignore
     return 0
 
 def extract_node_name(node, source_bytes: bytes) -> str:
@@ -75,10 +75,10 @@ def extract_node_name(node, source_bytes: bytes) -> str:
     # Iterate through children
     child_count = getattr(node, "child_count", 0)
     if callable(child_count):
-        child_count = child_count()
+        child_count = child_count()  # type: ignore
         
-    for i in range(child_count):
-        child = node.child(i)
+    for i in range(child_count):  # type: ignore
+        child = node.child(i)  # type: ignore
         if child:
             name = extract_node_name(child, source_bytes)
             if name:
@@ -90,37 +90,35 @@ def get_anonymous_symbol_name(node, source_bytes: bytes) -> str:
     """Resolves name of anonymous functions/classes assigned to variables or properties."""
     parent = getattr(node, "parent", None)
     if parent is not None:
-        parent_node = parent() if callable(parent) else parent
+        parent_node = parent() if callable(parent) else parent  # type: ignore
         if parent_node:
-            p_kind = getattr(parent_node, "kind", None)
-            if p_kind is not None:
-                p_kind_val = p_kind() if callable(p_kind) else p_kind
+            p_kind_val = get_node_type(parent_node)
+            
+            child_count = getattr(parent_node, "child_count", 0)
+            if callable(child_count):
+                child_count = child_count()  # type: ignore
                 
-                child_count = getattr(parent_node, "child_count", 0)
-                if callable(child_count):
-                    child_count = child_count()
-                    
-                if p_kind_val == "variable_declarator":
-                    for i in range(child_count):
-                        child = parent_node.child(i)
-                        if child:
-                            c_kind = child.kind() if callable(child.kind) else child.kind
-                            if c_kind in {"identifier", "property_identifier"}:
-                                start = child.start_byte() if callable(child.start_byte) else child.start_byte
-                                end = child.end_byte() if callable(child.end_byte) else child.end_byte
-                                return source_bytes[start:end].decode("utf-8", errors="ignore").strip()
-                elif p_kind_val == "assignment_expression":
-                    left = parent_node.child(0)
-                    if left:
-                        start = left.start_byte() if callable(left.start_byte) else left.start_byte
-                        end = left.end_byte() if callable(left.end_byte) else left.end_byte
-                        return source_bytes[start:end].decode("utf-8", errors="ignore").strip()
-                elif p_kind_val == "pair":
-                    key = parent_node.child(0)
-                    if key:
-                        start = key.start_byte() if callable(key.start_byte) else key.start_byte
-                        end = key.end_byte() if callable(key.end_byte) else key.end_byte
-                        return source_bytes[start:end].decode("utf-8", errors="ignore").strip()
+            if p_kind_val == "variable_declarator":
+                for i in range(child_count):  # type: ignore
+                    child = parent_node.child(i)  # type: ignore
+                    if child:
+                        c_kind = get_node_type(child)
+                        if c_kind in {"identifier", "property_identifier"}:
+                            start = get_node_byte(child, "start")
+                            end = get_node_byte(child, "end")
+                            return source_bytes[start:end].decode("utf-8", errors="ignore").strip()
+            elif p_kind_val == "assignment_expression":
+                left = parent_node.child(0)  # type: ignore
+                if left:
+                    start = get_node_byte(left, "start")
+                    end = get_node_byte(left, "end")
+                    return source_bytes[start:end].decode("utf-8", errors="ignore").strip()
+            elif p_kind_val == "pair":
+                key = parent_node.child(0)  # type: ignore
+                if key:
+                    start = get_node_byte(key, "start")
+                    end = get_node_byte(key, "end")
+                    return source_bytes[start:end].decode("utf-8", errors="ignore").strip()
     return ""
 
 
@@ -271,10 +269,10 @@ class SymbolExtractor:
             # Push children to stack in reverse order for DFS
             child_count = getattr(node, "child_count", 0)
             if callable(child_count):
-                child_count = child_count()
+                child_count = child_count()  # type: ignore
             
-            for i in range(child_count - 1, -1, -1):
-                child = node.child(i)
+            for i in range(child_count - 1, -1, -1):  # type: ignore
+                child = node.child(i)  # type: ignore
                 if child:
                     stack.append((child, current_qual))
                     
@@ -291,14 +289,19 @@ class SymbolExtractor:
         
         # Safe traversal of parent node
         parent_func = getattr(node, "parent", None)
-        parent = parent_func() if callable(parent_func) else parent_func
-        parent_kind = parent.kind() if parent else None
+        parent = parent_func() if callable(parent_func) else parent_func  # type: ignore
+        parent_kind = get_node_type(parent) if parent else ""
         
         if parent_kind == "decorated_definition":
-            for i in range(parent.child_count()):
-                child = parent.child(i)
-                if child.kind() == "decorator":
-                    dec_text = source_bytes[child.start_byte():child.end_byte()].decode("utf-8", errors="ignore")
+            child_count = getattr(parent, "child_count", 0)
+            if callable(child_count):
+                child_count = child_count()  # type: ignore
+            for i in range(child_count):  # type: ignore
+                child = parent.child(i)  # type: ignore
+                if child and get_node_type(child) == "decorator":
+                    start_b = get_node_byte(child, "start")
+                    end_b = get_node_byte(child, "end")
+                    dec_text = source_bytes[start_b:end_b].decode("utf-8", errors="ignore")
                     decorators.append(dec_text)
                     
         symbol["decorators"] = decorators

@@ -9,6 +9,12 @@ QDRANT_HOST = "localhost"
 QDRANT_PORT = 6333
 COLLECTION_NAME = "code_rag_v2"
 
+def get_collection_name(repo_name: str) -> str:
+    """Dynamically generates a clean, standard Qdrant collection name for a given repository."""
+    safe_name = repo_name.lower().replace("-", "_").replace(" ", "_")
+    return f"code_rag_v2_{safe_name}"
+
+
 # Retrieval Settings
 TOP_K = 10
 RRF_K = 60  # RRF constant
